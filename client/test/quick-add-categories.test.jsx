@@ -81,4 +81,19 @@ describe("Quick Add category dropdown", () => {
       body: expect.objectContaining({ categoryId: "food-id", type: "expense" }),
     });
   });
+
+  it("shows all payment methods in a viewport-positioned menu", async () => {
+    const user = userEvent.setup();
+    renderDashboard();
+
+    await user.click(await screen.findByRole("button", { name: "Payment method Other" }));
+    const menu = screen.getByRole("menu");
+    expect(menu.parentElement).toBe(document.body);
+    for (const method of ["Other", "Cash", "Card", "Bank transfer", "Mobile wallet"]) {
+      expect(within(menu).getByRole("menuitemradio", { name: method })).toBeInTheDocument();
+    }
+
+    await user.click(within(menu).getByRole("menuitemradio", { name: "Card" }));
+    expect(screen.getByRole("button", { name: "Payment method Card" })).toBeInTheDocument();
+  });
 });

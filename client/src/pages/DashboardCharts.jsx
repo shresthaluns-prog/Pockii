@@ -36,7 +36,7 @@ export function CashFlowChart({ data, currency }) {
           <Tooltip formatter={(value, name) => [formatMoney(Number(value), currency), name]} />
           <Legend />
           <Bar dataKey="incomeMinor" fill="#25aaa4" name="Income" radius={[5, 5, 0, 0]} />
-          <Bar dataKey="expensesMinor" fill="#6ba6e8" name="Expenses" radius={[5, 5, 0, 0]} />
+          <Bar dataKey="expensesMinor" fill="#ef4444" name="Expenses" radius={[5, 5, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

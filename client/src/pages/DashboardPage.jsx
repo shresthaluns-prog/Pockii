@@ -2,6 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { z } from "zod";
 import { apiRequest } from "../api/request.js";
@@ -302,13 +303,15 @@ function QuickAddTransaction({
       )}
       {formError && <div className="mb-4"><Notice>{formError}</Notice></div>}
       <form className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6" onSubmit={form.handleSubmit(onSubmit)}>
-        <label className="block text-sm font-medium text-slate-700">
-          Type
-          <select className={inputClass} {...form.register("type")}>
-            <option value="expense">Expense</option>
-            <option value="income">Income</option>
-          </select>
-        </label>
+        <QuickSelectDropdown
+          form={form}
+          label="Type"
+          name="type"
+          options={[
+            { value: "expense", label: "Expense" },
+            { value: "income", label: "Income" },
+          ]}
+        />
         <CategoryDropdown
           categories={availableCategories}
           disabled={categoriesPending || availableCategories.length === 0}
@@ -330,16 +333,18 @@ function QuickAddTransaction({
           <input className={inputClass} type="date" {...form.register("date")} />
           {errors.date && <span className="mt-1 block text-xs text-rose-700">{errors.date.message}</span>}
         </label>
-        <label className="block text-sm font-medium text-slate-700">
-          Payment method
-          <select className={inputClass} {...form.register("paymentMethod")}>
-            <option value="other">Other</option>
-            <option value="cash">Cash</option>
-            <option value="card">Card</option>
-            <option value="bank_transfer">Bank transfer</option>
-            <option value="mobile_wallet">Mobile wallet</option>
-          </select>
-        </label>
+        <QuickSelectDropdown
+          form={form}
+          label="Payment method"
+          name="paymentMethod"
+          options={[
+            { value: "other", label: "Other" },
+            { value: "cash", label: "Cash" },
+            { value: "card", label: "Card" },
+            { value: "bank_transfer", label: "Bank transfer" },
+            { value: "mobile_wallet", label: "Mobile wallet" },
+          ]}
+        />
         <label className="block text-sm font-medium text-slate-700 sm:col-span-2 xl:col-span-4">
           Note <span className="font-normal text-slate-400">(optional)</span>
           <input className={inputClass} maxLength={500} placeholder="What was this transaction for?" {...form.register("note")} />
@@ -353,6 +358,167 @@ function QuickAddTransaction({
         </div>
       </form>
     </Panel>
+  );
+}
+
+function QuickSelectDropdown({ form, label, name, options }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState(null);
+  const selectedValue = useWatch({ control: form.control, name });
+  const containerRef = useRef(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const id = `quick-add-${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+  const selectedOption = options.find((option) => option.value === selectedValue);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    function closeOnOutsideClick(event) {
+      if (!containerRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setMenuPosition(null);
+      return undefined;
+    }
+
+    function positionMenu() {
+      const trigger = triggerRef.current;
+      const menu = menuRef.current;
+      if (!trigger || !menu) return;
+
+      const triggerRect = trigger.getBoundingClientRect();
+      const maxHeight = Math.min(256, window.innerHeight - 16);
+      const menuHeight = Math.min(menu.scrollHeight, maxHeight);
+      const spaceBelow = window.innerHeight - triggerRect.bottom;
+      const openAbove = spaceBelow < menuHeight + 8 && triggerRect.top >= menuHeight + 8;
+      const top = openAbove
+        ? triggerRect.top - menuHeight - 8
+        : Math.min(triggerRect.bottom + 8, window.innerHeight - menuHeight - 8);
+
+      setMenuPosition({
+        left: triggerRect.left,
+        maxHeight,
+        top,
+        width: triggerRect.width,
+      });
+    }
+
+    positionMenu();
+    window.addEventListener("resize", positionMenu);
+    window.addEventListener("scroll", positionMenu, true);
+    return () => {
+      window.removeEventListener("resize", positionMenu);
+      window.removeEventListener("scroll", positionMenu, true);
+    };
+  }, [isOpen]);
+
+  function closeMenu(restoreFocus = false) {
+    setIsOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  }
+
+  function handleMenuKeyDown(event) {
+    const items = [...(menuRef.current?.querySelectorAll('[role="menuitemradio"]') ?? [])];
+    const currentIndex = items.indexOf(document.activeElement);
+    let nextIndex;
+    if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+    if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + items.length) % items.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = items.length - 1;
+    if (nextIndex !== undefined && items.length > 0) {
+      event.preventDefault();
+      items[nextIndex].focus();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu(true);
+    }
+  }
+
+  return (
+    <div
+      className="relative min-w-0"
+      onBlur={(event) => {
+        if (
+          !event.currentTarget.contains(event.relatedTarget)
+          && !menuRef.current?.contains(event.relatedTarget)
+        ) {
+          setIsOpen(false);
+        }
+      }}
+      ref={containerRef}
+    >
+      <span className="text-sm font-medium text-slate-700" id={`${id}-label`}>{label}</span>
+      <input type="hidden" {...form.register(name)} />
+      <button
+        aria-controls={`${id}-menu`}
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        aria-labelledby={`${id}-label ${id}-value`}
+        className={`${inputClass} flex items-center justify-between gap-3 text-left`}
+        onClick={() => setIsOpen((open) => !open)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && !isOpen) {
+            event.preventDefault();
+            setIsOpen(true);
+            requestAnimationFrame(() => menuRef.current?.querySelector("button")?.focus());
+          }
+        }}
+        ref={triggerRef}
+        type="button"
+      >
+        <span className="truncate text-slate-900" id={`${id}-value`}>{selectedOption?.label ?? label}</span>
+        <svg aria-hidden="true" className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 20 20" stroke="currentColor">
+          <path d="m5 7.5 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+        </svg>
+      </button>
+      {isOpen && createPortal(
+        <div
+          aria-labelledby={`${id}-label`}
+          className="fixed z-50 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10"
+          id={`${id}-menu`}
+          onKeyDown={handleMenuKeyDown}
+          ref={menuRef}
+          role="menu"
+          style={{
+            left: menuPosition?.left ?? 0,
+            maxHeight: menuPosition?.maxHeight ?? "min(16rem, calc(100vh - 16px))",
+            top: menuPosition?.top ?? 0,
+            visibility: menuPosition ? "visible" : "hidden",
+            width: menuPosition?.width ?? 0,
+          }}
+        >
+          {options.map((option) => {
+            const isSelected = option.value === selectedValue;
+            return (
+              <button
+                aria-checked={isSelected}
+                className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${
+                  isSelected ? "bg-teal-50 font-semibold text-teal-900" : "text-slate-700 hover:bg-slate-50"
+                }`}
+                key={option.value}
+                onClick={() => {
+                  form.setValue(name, option.value, { shouldDirty: true, shouldValidate: true });
+                  closeMenu(true);
+                }}
+                role="menuitemradio"
+                type="button"
+              >
+                <span>{option.label}</span>
+                {isSelected && <span aria-hidden="true" className="text-teal-700">✓</span>}
+              </button>
+            );
+          })}
+        </div>,
+        document.body,
+      )}
+    </div>
   );
 }
 

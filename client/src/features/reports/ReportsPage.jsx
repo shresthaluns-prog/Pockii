@@ -197,7 +197,7 @@ function ReportsPage() {
                       <Tooltip formatter={(value, name) => [formatMoney(Number(value), selectedCurrency), name]} />
                       <Legend />
                       <Bar dataKey="incomeMinor" fill="#10b981" name="Income" radius={[5, 5, 0, 0]} />
-                      <Bar dataKey="expenseMinor" fill="#6366f1" name="Expenses" radius={[5, 5, 0, 0]} />
+                      <Bar dataKey="expenseMinor" fill="#ef4444" name="Expenses" radius={[5, 5, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
