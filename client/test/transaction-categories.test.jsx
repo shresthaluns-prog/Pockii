@@ -28,7 +28,8 @@ const categories = expenseNames.map((name, index) => ({
   _id: `category-${index}`,
   name,
   type: "expense",
-}));
+  color: "#f59e0b",
+})).concat({ _id: "salary-id", name: "Salary", type: "income", color: "#10b981" });
 const transaction = {
   _id: "transaction-1",
   categoryId: categories[0],
@@ -51,10 +52,11 @@ function renderPage() {
   );
 }
 
-function expectExpenseOptions(select) {
-  const options = within(select).getAllByRole("option");
-  expect(options.map((option) => option.textContent)).toEqual(["Select", ...expenseNames]);
-  expect(options.slice(1).map((option) => option.value)).toEqual(categories.map(({ _id }) => _id));
+async function expectExpenseOptions(user, dialog) {
+  await user.click(within(dialog).getByRole("button", { name: /^Category / }));
+  const menu = within(dialog).getByRole("menu");
+  expect(within(menu).getAllByRole("menuitemradio").map((option) => option.getAttribute("aria-label")))
+    .toEqual(expenseNames);
 }
 
 beforeEach(() => {
@@ -83,17 +85,38 @@ describe("predefined expense transaction categories", () => {
 
     await user.click(await screen.findByRole("button", { name: /add transaction/i }));
     const dialog = screen.getByRole("dialog");
-    const createCategorySelect = within(dialog).getByLabelText("Category");
-    expectExpenseOptions(createCategorySelect);
-    for (const { _id } of categories) {
-      await user.selectOptions(createCategorySelect, _id);
-      expect(createCategorySelect).toHaveValue(_id);
-    }
+    await expectExpenseOptions(user, dialog);
+    await user.click(within(dialog).getByRole("menuitemradio", { name: "Food" }));
+    expect(within(dialog).getByRole("button", { name: "Category Food" })).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Type Expense" }));
+    const typeMenu = within(dialog).getByRole("menu");
+    await user.click(within(typeMenu).getByRole("menuitemradio", { name: "Income" }));
+    expect(within(dialog).getByRole("button", { name: "Type Income" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Category Select category" })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Category Select category" }));
+    expect(within(dialog).getByRole("menuitemradio", { name: "Salary" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     await user.click(await screen.findByRole("button", { name: "Edit Lunch" }));
-    const editCategorySelect = within(screen.getByRole("dialog")).getByLabelText("Category");
-    expectExpenseOptions(editCategorySelect);
-    expect(editCategorySelect).toHaveValue(categories[0]._id);
+    const editDialog = screen.getByRole("dialog");
+    await expectExpenseOptions(user, editDialog);
+    expect(within(editDialog).getByRole("button", { name: "Category Food" })).toBeInTheDocument();
+  });
+
+  it("uses styled dropdown menus for transaction history type and category filters", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "Type All" }));
+    const typeMenu = screen.getByRole("menu");
+    expect(within(typeMenu).getByRole("menuitemradio", { name: "Income" })).toBeInTheDocument();
+    await user.click(within(typeMenu).getByRole("menuitemradio", { name: "Income" }));
+    expect(screen.getByRole("button", { name: "Type Income" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Category All" }));
+    const categoryMenu = screen.getByRole("menu");
+    expect(within(categoryMenu).getByRole("menuitemradio", { name: "Food" })).toBeInTheDocument();
+    expect(within(categoryMenu).getByRole("menuitemradio", { name: "Salary" })).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { listCategories } from "../categories/categoriesApi.js";
@@ -35,6 +35,143 @@ function dateInputValue(value) {
   return new Date(value).toISOString().slice(0, 10);
 }
 
+function TransactionDropdown({
+  error,
+  form,
+  label,
+  labelClassName = "text-sm font-medium text-slate-700",
+  name,
+  id = `transaction-${name}`,
+  onChange,
+  options,
+  placeholder,
+  value,
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const selectedOption = options.find((option) => option.value === value);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    function closeOnOutsideClick(event) {
+      if (!containerRef.current?.contains(event.target)) setIsOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [isOpen]);
+
+  function closeMenu(restoreFocus = false) {
+    setIsOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  }
+
+  function handleMenuKeyDown(event) {
+    const items = [...(menuRef.current?.querySelectorAll('[role="menuitemradio"]') ?? [])];
+    const currentIndex = items.indexOf(document.activeElement);
+    let nextIndex;
+    if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+    if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + items.length) % items.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = items.length - 1;
+    if (nextIndex !== undefined && items.length > 0) {
+      event.preventDefault();
+      items[nextIndex].focus();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu(true);
+    }
+  }
+
+  return (
+    <div
+      className="relative flex min-w-0 flex-col"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsOpen(false);
+      }}
+      ref={containerRef}
+    >
+      <span className={`block leading-4 ${labelClassName}`} id={`${id}-label`}>{label}</span>
+      {form && <input type="hidden" {...form.register(name)} />}
+      <button
+        aria-controls={`${id}-menu`}
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        aria-labelledby={`${id}-label ${id}-value`}
+        className={`${inputClass} flex items-center justify-between gap-3 text-left`}
+        onClick={() => setIsOpen((open) => !open)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && !isOpen) {
+            event.preventDefault();
+            setIsOpen(true);
+            requestAnimationFrame(() => menuRef.current?.querySelector("button")?.focus());
+          }
+        }}
+        ref={triggerRef}
+        type="button"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          {selectedOption?.color && (
+            <span aria-hidden="true" className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: selectedOption.color }} />
+          )}
+          <span className="truncate text-slate-900" id={`${id}-value`}>
+            {selectedOption?.label ?? placeholder ?? label}
+          </span>
+        </span>
+        <svg aria-hidden="true" className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 20 20" stroke="currentColor">
+          <path d="m5 7.5 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+        </svg>
+      </button>
+      {isOpen && (
+        <div
+          aria-labelledby={`${id}-label`}
+          className="absolute z-30 mt-2 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10"
+          id={`${id}-menu`}
+          onKeyDown={handleMenuKeyDown}
+          ref={menuRef}
+          role="menu"
+        >
+          {options.length ? options.map((option) => {
+            const isSelected = option.value === value;
+            return (
+              <button
+                aria-label={option.label}
+                aria-checked={isSelected}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${
+                  isSelected ? "bg-teal-50 font-semibold text-teal-900" : "text-slate-700 hover:bg-slate-50"
+                }`}
+                key={option.value}
+                onClick={() => {
+                  onChange(option.value);
+                  closeMenu(true);
+                }}
+                role="menuitemradio"
+                type="button"
+              >
+                {option.color ? (
+                  <span
+                    aria-hidden="true"
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-xs font-bold text-white"
+                    style={{ backgroundColor: option.color }}
+                  >
+                    {option.label.trim().charAt(0).toUpperCase()}
+                  </span>
+                ) : null}
+                <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                {isSelected && <span aria-hidden="true" className="text-teal-700">✓</span>}
+              </button>
+            );
+          }) : (
+            <p className="px-3 py-2.5 text-sm text-slate-500">No categories available</p>
+          )}
+        </div>
+      )}
+      {error && <span className="mt-1 block text-xs text-rose-700">{error}</span>}
+    </div>
+  );
+}
+
 function TransactionsPage() {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(null);
@@ -66,6 +203,7 @@ function TransactionsPage() {
   });
   const { reset } = form;
   const selectedType = useWatch({ control: form.control, name: "type" });
+  const selectedCategoryId = useWatch({ control: form.control, name: "categoryId" });
   const availableCategories = useMemo(
     () => categories.filter((category) => category.type === selectedType),
     [categories, selectedType],
@@ -204,21 +342,31 @@ function TransactionsPage() {
           )}
           <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
             <div className="grid grid-cols-2 gap-3">
-              <label className="block text-sm font-medium text-slate-700">
-                Type
-                <select className={inputClass} {...form.register("type")}>
-                  <option value="expense">Expense</option>
-                  <option value="income">Income</option>
-                </select>
-              </label>
-              <label className="block text-sm font-medium text-slate-700">
-                Category
-                <select className={inputClass} {...form.register("categoryId")}>
-                  <option value="">Select</option>
-                  {availableCategories.map((category) => <option key={category._id} value={category._id}>{category.name}</option>)}
-                </select>
-                {fieldError.categoryId && <span className="mt-1 block text-xs text-rose-700">{fieldError.categoryId.message}</span>}
-              </label>
+              <TransactionDropdown
+                form={form}
+                label="Type"
+                name="type"
+                onChange={(value) => form.setValue("type", value, { shouldDirty: true, shouldValidate: true })}
+                value={selectedType}
+                options={[
+                  { value: "expense", label: "Expense" },
+                  { value: "income", label: "Income" },
+                ]}
+              />
+              <TransactionDropdown
+                error={fieldError.categoryId?.message}
+                form={form}
+                label="Category"
+                name="categoryId"
+                onChange={(value) => form.setValue("categoryId", value, { shouldDirty: true, shouldValidate: true })}
+                value={selectedCategoryId}
+                options={availableCategories.map((category) => ({
+                  color: category.color,
+                  label: category.name,
+                  value: category._id,
+                }))}
+                placeholder="Select category"
+              />
             </div>
             <div className="grid grid-cols-[1fr_100px] gap-3">
               <label className="block text-sm font-medium text-slate-700">
@@ -264,28 +412,44 @@ function TransactionsPage() {
 
       <Panel title="Transaction history" description="Your newest activity appears first.">
           <form className="mb-5 grid gap-3 rounded-xl bg-slate-50 p-3 sm:grid-cols-2 xl:grid-cols-6" onSubmit={applyFilters}>
-            <label className="text-xs font-semibold text-slate-600 sm:col-span-2 xl:col-span-2">
+            <label className="flex min-w-0 flex-col text-xs font-semibold leading-4 text-slate-600 sm:col-span-2 xl:col-span-2">
               Search notes
               <input className={`${inputClass} bg-white`} placeholder="Search transactions" value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} />
             </label>
-            <label className="text-xs font-semibold text-slate-600">
-              Type
-              <select className={`${inputClass} bg-white`} value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}>
-                <option value="">All</option><option value="expense">Expense</option><option value="income">Income</option>
-              </select>
-            </label>
-            <label className="text-xs font-semibold text-slate-600">
-              Category
-              <select className={`${inputClass} bg-white`} value={filters.categoryId} onChange={(event) => setFilters({ ...filters, categoryId: event.target.value })}>
-                <option value="">All</option>
-                {categories.map((category) => <option key={category._id} value={category._id}>{category.name}</option>)}
-              </select>
-            </label>
-            <label className="text-xs font-semibold text-slate-600">
+            <TransactionDropdown
+              id="transaction-filter-type"
+              label="Type"
+              labelClassName="text-xs font-semibold text-slate-600"
+              name="filterType"
+              onChange={(value) => setFilters({ ...filters, type: value })}
+              options={[
+                { value: "", label: "All" },
+                { value: "expense", label: "Expense" },
+                { value: "income", label: "Income" },
+              ]}
+              value={filters.type}
+            />
+            <TransactionDropdown
+              id="transaction-filter-category"
+              label="Category"
+              labelClassName="text-xs font-semibold text-slate-600"
+              name="filterCategory"
+              onChange={(value) => setFilters({ ...filters, categoryId: value })}
+              options={[
+                { value: "", label: "All" },
+                ...categories.map((category) => ({
+                  color: category.color,
+                  label: category.name,
+                  value: category._id,
+                })),
+              ]}
+              value={filters.categoryId}
+            />
+            <label className="flex min-w-0 flex-col text-xs font-semibold leading-4 text-slate-600">
               From
               <input className={`${inputClass} bg-white`} max={filters.endDate || undefined} type="date" value={filters.startDate} onChange={(event) => setFilters({ ...filters, startDate: event.target.value })} />
             </label>
-            <label className="text-xs font-semibold text-slate-600">
+            <label className="flex min-w-0 flex-col text-xs font-semibold leading-4 text-slate-600">
               Through
               <input className={`${inputClass} bg-white`} min={filters.startDate || undefined} type="date" value={filters.endDate} onChange={(event) => setFilters({ ...filters, endDate: event.target.value })} />
             </label>
