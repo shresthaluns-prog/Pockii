@@ -7,14 +7,14 @@ import DashboardPage from "../src/pages/DashboardPage.jsx";
 
 const api = vi.hoisted(() => ({
   apiRequest: vi.fn(),
-  listCategories: vi.fn(),
+  listAllCategories: vi.fn(),
   listTransactions: vi.fn(),
   fetchReport: vi.fn(),
 }));
 
 vi.mock("../src/api/request.js", () => ({ apiRequest: api.apiRequest }));
 vi.mock("../src/features/categories/categoriesApi.js", () => ({
-  listCategories: api.listCategories,
+  listAllCategories: api.listAllCategories,
 }));
 vi.mock("../src/features/expenses/transactionsApi.js", () => ({
   listTransactions: api.listTransactions,
@@ -30,6 +30,7 @@ vi.mock("../src/pages/DashboardCharts.jsx", () => ({
 const categories = [
   { _id: "food-id", name: "Food", type: "expense", color: "#f59e0b" },
   { _id: "rent-id", name: "Rent", type: "expense", color: "#6366f1" },
+  { _id: "shopping-id", name: "Shopping", type: "expense", color: "#14b8a6" },
   { _id: "salary-id", name: "Salary", type: "income", color: "#10b981" },
 ];
 
@@ -48,7 +49,7 @@ function renderDashboard() {
 
 beforeEach(() => {
   api.apiRequest.mockResolvedValue({ success: true });
-  api.listCategories.mockResolvedValue(categories);
+  api.listAllCategories.mockResolvedValue(categories);
   api.listTransactions.mockResolvedValue({ data: [], pagination: { page: 1, totalPages: 1 } });
   api.fetchReport.mockResolvedValue({});
 });
@@ -66,19 +67,20 @@ describe("Quick Add category dropdown", () => {
     await user.click(await screen.findByRole("button", { name: "Category Select category" }));
     const menu = screen.getByRole("menu");
     const foodOption = within(menu).getByRole("menuitemradio", { name: "Food" });
+    expect(within(menu).getByRole("menuitemradio", { name: "Shopping" })).toBeInTheDocument();
     expect(foodOption).toHaveAttribute("aria-checked", "false");
     expect(within(menu).queryByRole("menuitemradio", { name: "Salary" })).not.toBeInTheDocument();
 
-    await user.click(foodOption);
+    await user.click(within(menu).getByRole("menuitemradio", { name: "Shopping" }));
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    expect(screen.getByText("Food")).toBeInTheDocument();
+    expect(screen.getByText("Shopping")).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Amount"), "12.50");
     await user.click(screen.getByRole("button", { name: "Add transaction" }));
 
     expect(api.apiRequest).toHaveBeenCalledWith("/transactions", {
       method: "POST",
-      body: expect.objectContaining({ categoryId: "food-id", type: "expense" }),
+      body: expect.objectContaining({ categoryId: "shopping-id", type: "expense" }),
     });
   });
 
@@ -95,5 +97,33 @@ describe("Quick Add category dropdown", () => {
 
     await user.click(within(menu).getByRole("menuitemradio", { name: "Card" }));
     expect(screen.getByRole("button", { name: "Payment method Card" })).toBeInTheDocument();
+  });
+
+  it("shows income categories after switching transaction type without asking to create one", async () => {
+    const user = userEvent.setup();
+    renderDashboard();
+
+    await user.click(await screen.findByRole("button", { name: "Type Expense" }));
+    await user.click(within(screen.getByRole("menu")).getByRole("menuitemradio", { name: "Income" }));
+
+    await user.click(screen.getByRole("button", { name: "Category Select category" }));
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getByRole("menuitemradio", { name: "Salary" })).toBeInTheDocument();
+    expect(within(menu).queryByRole("menuitemradio", { name: "Shopping" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Create a income category/)).not.toBeInTheDocument();
+  });
+
+  it("refreshes categories from Overview when a newly created expense category is missing", async () => {
+    const user = userEvent.setup();
+    api.listAllCategories
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(categories);
+    renderDashboard();
+
+    await user.click(await screen.findByRole("button", { name: "Refresh categories" }));
+    await user.click(await screen.findByRole("button", { name: "Category Select category" }));
+
+    expect(within(screen.getByRole("menu")).getByRole("menuitemradio", { name: "Shopping" }))
+      .toBeInTheDocument();
   });
 });

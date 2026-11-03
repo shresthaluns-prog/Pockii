@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { archiveCategory, createCategory, listCategories, updateCategory } from "./categoriesApi.js";
+import { archiveCategory, createCategory, listCategories, restoreCategory, updateCategory } from "./categoriesApi.js";
 import {
   buttonClass,
   EmptyState,
@@ -30,9 +30,10 @@ function CategoriesPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState("error");
+  const [showArchived, setShowArchived] = useState(false);
   const categoriesQuery = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => listCategories(),
+    queryKey: ["categories", showArchived ? "with-archived" : "active"],
+    queryFn: () => listCategories(showArchived ? { includeArchived: true } : {}),
   });
   const {
     register,
@@ -82,6 +83,18 @@ function CategoriesPage() {
       setMessage(error.message);
     },
   });
+  const restoreMutation = useMutation({
+    mutationFn: restoreCategory,
+    onSuccess: async () => {
+      setMessage("Category restored and available for new transactions.");
+      setMessageTone("success");
+      await refreshRelatedData();
+    },
+    onError: (error) => {
+      setMessageTone("error");
+      setMessage(error.message);
+    },
+  });
 
   async function onSubmit(values) {
     setMessage("");
@@ -95,8 +108,9 @@ function CategoriesPage() {
   }
 
   const categories = categoriesQuery.data ?? [];
-  const expenses = categories.filter((category) => category.type === "expense");
-  const incomes = categories.filter((category) => category.type === "income");
+  const visibleCategories = categories.filter((category) => Boolean(category.isArchived) === showArchived);
+  const expenses = visibleCategories.filter((category) => category.type === "expense");
+  const incomes = visibleCategories.filter((category) => category.type === "income");
 
   function openCreateForm() {
     setEditing(null);
@@ -119,6 +133,22 @@ function CategoriesPage() {
         action={<button className={buttonClass} onClick={openCreateForm} type="button">＋ Add category</button>}
       />
       {message && <Notice tone={messageTone}>{message}</Notice>}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-500">
+          {showArchived ? "Archived categories are hidden from new transactions." : "Manage your active income and expense categories."}
+        </p>
+        <button
+          aria-pressed={showArchived}
+          className={secondaryButtonClass}
+          onClick={() => {
+            setMessage("");
+            setShowArchived((visible) => !visible);
+          }}
+          type="button"
+        >
+          {showArchived ? "Show active categories" : "View archived categories"}
+        </button>
+      </div>
       {formOpen && (
         <Modal
           description="Category names are unique within each type."
@@ -168,6 +198,8 @@ function CategoriesPage() {
               <CategoryGroup
                 categories={expenses}
                 onArchive={handleArchive}
+                onRestore={(category) => restoreMutation.mutate(category._id)}
+                archived={showArchived}
                 onEdit={(category) => {
                   setMessage("");
                   setEditing(category);
@@ -178,6 +210,8 @@ function CategoriesPage() {
               <CategoryGroup
                 categories={incomes}
                 onArchive={handleArchive}
+                onRestore={(category) => restoreMutation.mutate(category._id)}
+                archived={showArchived}
                 onEdit={(category) => {
                   setMessage("");
                   setEditing(category);
@@ -192,7 +226,7 @@ function CategoriesPage() {
   );
 }
 
-function CategoryGroup({ categories, title, onEdit, onArchive }) {
+function CategoryGroup({ categories, title, onEdit, onArchive, onRestore, archived }) {
   return (
     <Panel title={title} action={<span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{categories.length}</span>}>
       {categories.length === 0 ? (
@@ -203,11 +237,19 @@ function CategoryGroup({ categories, title, onEdit, onArchive }) {
             <li className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0" key={category._id}>
               <div className="flex min-w-0 items-center gap-3">
                 <span aria-hidden="true" className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: category.color }} />
-                <span className="truncate text-sm font-medium text-slate-800">{category.name}</span>
+                <span className="truncate text-sm font-medium text-slate-800">
+                  {category.name}{archived && <span className="ml-2 text-xs font-normal text-slate-400">Archived</span>}
+                </span>
               </div>
               <div className="flex gap-2">
-                <button className={secondaryButtonClass} onClick={() => onEdit(category)} type="button">Edit</button>
-                <button className="rounded-xl px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50" onClick={() => void onArchive(category)} type="button">Archive</button>
+                {archived ? (
+                  <button className={secondaryButtonClass} onClick={() => onRestore(category)} type="button">Restore</button>
+                ) : (
+                  <>
+                    <button className={secondaryButtonClass} onClick={() => onEdit(category)} type="button">Edit</button>
+                    <button className="rounded-xl px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50" onClick={() => void onArchive(category)} type="button">Archive</button>
+                  </>
+                )}
               </div>
             </li>
           ))}

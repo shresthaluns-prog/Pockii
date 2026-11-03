@@ -84,6 +84,27 @@ categoryRouter
   });
 
 categoryRouter
+  .post("/:id/restore", validate(categoryIdSchema, "params"), async (req, res, next) => {
+    try {
+      const category = await Category.findOneAndUpdate(
+        { _id: req.validated.params, userId: req.authUser.id, isArchived: true },
+        { $set: { isArchived: false } },
+        { returnDocument: "after", runValidators: true },
+      );
+      if (!category) return res.status(404).json({ success: false, message: "Archived category not found." });
+      res.json({ success: true, data: publicCategory(category) });
+    } catch (error) {
+      if (duplicateCategoryError(error)) {
+        return res.status(409).json({
+          success: false,
+          message: "A category with this name and type already exists. Rename or archive that category before restoring.",
+        });
+      }
+      next(error);
+    }
+  });
+
+categoryRouter
   .route("/:id")
   .all(validate(categoryIdSchema, "params"))
   .get(async (req, res, next) => {

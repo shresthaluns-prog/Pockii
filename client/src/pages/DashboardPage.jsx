@@ -14,7 +14,7 @@ import {
   Notice,
   Panel,
 } from "../components/ui.jsx";
-import { listCategories } from "../features/categories/categoriesApi.js";
+import { listAllCategories } from "../features/categories/categoriesApi.js";
 import { listTransactions } from "../features/expenses/transactionsApi.js";
 import { fetchReport } from "../features/reports/reportsApi.js";
 import { loadPreferences, subscribeToPreferences } from "../features/settings/preferences.js";
@@ -72,8 +72,8 @@ function DashboardPage() {
     queryFn: () => listTransactions({ limit: 6 }),
   });
   const categoriesQuery = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => listCategories(),
+    queryKey: ["categories", "quick-add"],
+    queryFn: () => listAllCategories(),
   });
 
   const form = useForm({
@@ -201,6 +201,7 @@ function DashboardPage() {
               availableCategories={availableCategories}
               categoriesError={categoriesQuery.error}
               categoriesPending={categoriesQuery.isPending}
+              onRefreshCategories={categoriesQuery.refetch}
               createPending={createMutation.isPending}
               errors={errors}
               form={form}
@@ -287,6 +288,7 @@ function QuickAddTransaction({
   availableCategories,
   categoriesError,
   categoriesPending,
+  onRefreshCategories,
   createPending,
   errors,
   form,
@@ -301,6 +303,10 @@ function QuickAddTransaction({
         <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           Create a {form.getValues("type")} category before adding this transaction.{" "}
           <Link className="font-semibold underline" to="/categories">Manage categories</Link>
+          {" · "}
+          <button className="font-semibold underline" onClick={() => void onRefreshCategories()} type="button">
+            Refresh categories
+          </button>
         </p>
       )}
       {formError && <div className="mb-4"><Notice>{formError}</Notice></div>}
@@ -319,6 +325,7 @@ function QuickAddTransaction({
           disabled={categoriesPending || availableCategories.length === 0}
           error={errors.categoryId?.message}
           form={form}
+          onOpen={() => void onRefreshCategories()}
         />
         <label className="block text-sm font-medium text-slate-700">
           Amount
@@ -524,7 +531,7 @@ function QuickSelectDropdown({ form, label, name, options }) {
   );
 }
 
-function CategoryDropdown({ categories, disabled, error, form }) {
+function CategoryDropdown({ categories, disabled, error, form, onOpen }) {
   const [isOpen, setIsOpen] = useState(false);
   const selectedCategoryId = useWatch({ control: form.control, name: "categoryId" });
   const containerRef = useRef(null);
@@ -581,7 +588,10 @@ function CategoryDropdown({ categories, disabled, error, form }) {
         aria-labelledby={`${labelId} quick-add-category-value`}
         className={`${inputClass} flex items-center justify-between gap-3 text-left disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400`}
         disabled={disabled}
-        onClick={() => setIsOpen((open) => !open)}
+        onClick={() => {
+          setIsOpen((open) => !open);
+          onOpen();
+        }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" && !isOpen) {
             event.preventDefault();

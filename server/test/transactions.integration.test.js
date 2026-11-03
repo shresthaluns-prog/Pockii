@@ -255,6 +255,21 @@ test(
     });
     assert.equal(createWithArchivedCategory.status, 404);
 
+    const activeCategories = await request(baseUrl, tokens[0], "/categories?type=expense");
+    assert.equal(activeCategories.body.data.some((category) => category._id === categoryOneId), false);
+    const archivedCategories = await request(
+      baseUrl,
+      tokens[0],
+      "/categories?type=expense&includeArchived=true",
+    );
+    assert.equal(archivedCategories.body.data.some((category) => category._id === categoryOneId), true);
+
+    const categoryRestore = await request(baseUrl, tokens[0], `/categories/${categoryOneId}/restore`, {
+      method: "POST",
+    });
+    assert.equal(categoryRestore.status, 200);
+    assert.equal(categoryRestore.body.data.isArchived, false);
+
     const ownerList = await request(baseUrl, tokens[0], "/transactions?page=1&limit=100");
     const otherOwnerList = await request(baseUrl, tokens[1], "/transactions?page=1&limit=100");
     assert.deepEqual(
