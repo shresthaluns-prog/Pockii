@@ -3,20 +3,26 @@ import { Link } from "react-router-dom";
 const features = [
   {
     number: "01",
-    title: "Know where it goes",
-    description: "Bring everyday spending into one clear view and organize it with categories that make sense to you.",
+    title: "Budgets that fit your life",
+    description: "Set an overall limit and budgets for individual categories while keeping category plans within your remaining budget.",
     icon: "↗",
   },
   {
     number: "02",
-    title: "Make room for goals",
-    description: "Set a budget for the things that matter and keep an eye on how you’re tracking throughout the month.",
+    title: "A heads-up before the limit",
+    description: "See an alert on your overview when spending reaches 80% of an overall or category budget.",
     icon: "◎",
   },
   {
     number: "03",
+    title: "Quick to add, easy to organize",
+    description: "Add a transaction from your overview, use your own categories, and archive or restore categories as your needs change.",
+    icon: "+",
+  },
+  {
+    number: "04",
     title: "See the bigger picture",
-    description: "Turn your transactions into simple reports that help you spot patterns and plan your next steps.",
+    description: "Explore income, expenses, and cash flow in one place to spot patterns and plan your next steps.",
     icon: "⌁",
   },
 ];
@@ -72,7 +78,7 @@ function LandingPage() {
                 <small><span aria-hidden="true">↗</span> A little more breathing room</small>
               </div>
               <div className="landing-chart">
-                <div className="landing-chart-heading"><span>Spending overview</span><span>Last 6 months</span></div>
+                <div className="landing-chart-heading"><span>Cash flow</span><span>Income &amp; expenses</span></div>
                 <svg aria-hidden="true" fill="none" viewBox="0 0 440 118">
                   <path d="M0 94H440M0 58H440M0 22H440" stroke="#e9f0f1" strokeDasharray="4 5" />
                   <path d="M7 80C34 72 46 86 76 69s39-12 63-23 42 17 70 3 35-30 62-22 41 16 62 2 38-20 58-13 31 1 42-9v98H7V80Z" fill="url(#chart-fill)" />
@@ -86,9 +92,9 @@ function LandingPage() {
                 </svg>
                 <div aria-hidden="true" className="landing-chart-months"><span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span></div>
               </div>
-              <div className="landing-budget">
+              <div className="landing-budget is-warning">
                 <div className="landing-budget-icon" aria-hidden="true">⌂</div>
-                <div className="landing-budget-copy"><strong>Everyday budget</strong><span>You’re right on track</span></div>
+                <div className="landing-budget-copy"><strong>Food budget · 82% used</strong><span>Careful — you’re getting close</span></div>
                 <div aria-hidden="true" className="landing-budget-status"><span /></div>
               </div>
             </div>

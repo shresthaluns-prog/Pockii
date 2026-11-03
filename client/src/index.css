@@ -1676,6 +1676,33 @@ textarea:focus-visible {
   background: #44b5a5;
 }
 
+.landing-budget.is-warning {
+  border-color: #f2d5d7;
+  background: #fff8f8;
+}
+
+.landing-budget.is-warning .landing-budget-icon {
+  background: #ffe8e7;
+  color: #d64d4d;
+}
+
+.landing-budget.is-warning .landing-budget-copy strong {
+  color: #913e46;
+}
+
+.landing-budget.is-warning .landing-budget-copy span {
+  color: #9c7175;
+}
+
+.landing-budget.is-warning .landing-budget-status {
+  background: #f6e2e4;
+}
+
+.landing-budget.is-warning .landing-budget-status span {
+  width: 82%;
+  background: #d46b73;
+}
+
 .landing-float-note {
   position: absolute;
   z-index: 2;
@@ -1731,7 +1758,7 @@ textarea:focus-visible {
 
 .landing-feature-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -1846,6 +1873,10 @@ textarea:focus-visible {
 
   .landing-float-note {
     right: -1%;
+  }
+
+  .landing-feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

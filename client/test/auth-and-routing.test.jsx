@@ -113,6 +113,10 @@ describe("protected routes", () => {
 
     expect(screen.getByRole("heading", { name: /Small steps\.\s*Smarter money\./ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Start your free account/ })).toHaveAttribute("href", "/auth");
+    expect(screen.getByRole("heading", { name: "Budgets that fit your life" })).toBeInTheDocument();
+    expect(screen.getByText(/alert on your overview when spending reaches 80%/i)).toBeInTheDocument();
+    expect(screen.getByText(/archive or restore categories/i)).toBeInTheDocument();
+    expect(screen.getByText(/Food budget · 82% used/)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Transactions" })).not.toBeInTheDocument();
   });
 
