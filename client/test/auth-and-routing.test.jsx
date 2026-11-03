@@ -126,7 +126,8 @@ describe("protected routes", () => {
 
     await user.click(screen.getByRole("link", { name: /Start your free account/ }));
 
-    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Create your account" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toBeInTheDocument();
   });
 
   it("shows navigation after the user is authenticated", () => {

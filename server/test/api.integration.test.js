@@ -432,6 +432,18 @@ test("budget CRUD derives spend from transactions and analytics stay user-scoped
     })
     .expect(201);
 
+  const overallBudget = await owner.agent
+    .post("/api/budgets")
+    .set("Origin", allowedOrigin)
+    .send({
+      amountMinor: 50000,
+      currency: "USD",
+      periodType: "custom",
+      startDate: "2026-03-01",
+      endDate: "2026-03-11",
+    });
+  assert.equal(overallBudget.status, 201, overallBudget.text);
+
   const budget = await owner.agent
     .post("/api/budgets")
     .set("Origin", allowedOrigin)
@@ -490,6 +502,10 @@ test("budget CRUD derives spend from transactions and analytics stay user-scoped
     .delete(`/api/budgets/${budget.body.data._id}`)
     .set("Origin", allowedOrigin);
   assert.equal(budgetDelete.status, 204);
+  const overallBudgetDelete = await owner.agent
+    .delete(`/api/budgets/${overallBudget.body.data._id}`)
+    .set("Origin", allowedOrigin);
+  assert.equal(overallBudgetDelete.status, 204);
 });
 
 test("CORS rejects untrusted auth origins and production refresh cookies are Secure", async () => {

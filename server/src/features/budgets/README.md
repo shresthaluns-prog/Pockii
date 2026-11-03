@@ -28,6 +28,15 @@ Status is `on_track` below 80%, `warning` from 80% through 100%, and
 `over_budget` above 100%. An empty period has zero spend, full remaining
 amount, zero percent, and `on_track` status.
 
+Category budgets are allocations from the overall budget with the same
+currency and exact UTC period boundaries. An overall budget must exist before
+category budgets can be created, and their combined amounts cannot exceed it.
+The available allocation is based on the overall budget's unspent amount,
+after subtracting existing category allocations. Updates that would exceed
+this amount are rejected. An overall budget cannot be reduced below its
+category allocations plus existing spend, or deleted while it has category
+allocations; delete the category budgets first.
+
 ## Endpoints
 
 - `GET /api/budgets?page=1&limit=20&periodType=monthly&scope=overall`

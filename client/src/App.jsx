@@ -45,7 +45,10 @@ function App() {
   const unauthenticatedRoutes = (
     <Routes>
       <Route element={<LandingPage />} path="/" />
-      <Route element={<AuthPage />} path="/auth" />
+      <Route
+        element={<AuthPage initialMode={location.state?.mode === "register" ? "register" : "login"} />}
+        path="/auth"
+      />
       <Route element={<Navigate replace to="/" />} path="*" />
     </Routes>
   );

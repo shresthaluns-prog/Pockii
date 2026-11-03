@@ -36,7 +36,7 @@ function LandingPage() {
         </Link>
         <nav aria-label="Landing page navigation" className="landing-navigation">
           <Link className="landing-login" to="/auth">Log in</Link>
-          <Link className="landing-nav-cta" to="/auth">Get started <span aria-hidden="true">→</span></Link>
+          <Link className="landing-nav-cta" state={{ mode: "register" }} to="/auth">Get started <span aria-hidden="true">→</span></Link>
         </nav>
       </header>
 
@@ -49,7 +49,7 @@ function LandingPage() {
               Pockii makes it easier to understand your spending, stick to a budget, and feel good about the choices you make every day.
             </p>
             <div className="landing-actions">
-              <Link className="landing-primary-button" to="/auth">Start your free account <span aria-hidden="true">→</span></Link>
+              <Link className="landing-primary-button" state={{ mode: "register" }} to="/auth">Start your free account <span aria-hidden="true">→</span></Link>
               <a className="landing-text-link" href="#features">See how it works <span aria-hidden="true">↓</span></a>
             </div>
             <p className="landing-reassurance"><span aria-hidden="true">✓</span> Simple to use <span aria-hidden="true">·</span> Made for your everyday</p>
@@ -121,7 +121,7 @@ function LandingPage() {
             <p className="landing-eyebrow">Your next small step starts here</p>
             <h2>Feel more at ease with your money.</h2>
           </div>
-          <Link className="landing-primary-button" to="/auth">Get started with Pockii <span aria-hidden="true">→</span></Link>
+          <Link className="landing-primary-button" state={{ mode: "register" }} to="/auth">Get started with Pockii <span aria-hidden="true">→</span></Link>
         </section>
       </main>
 

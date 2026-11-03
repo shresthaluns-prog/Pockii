@@ -1201,6 +1201,23 @@ textarea:focus-visible {
   color: var(--teal-dark);
 }
 
+.landing-navigation .landing-login {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  border: 1px solid rgba(13, 135, 137, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.38);
+  color: #42616a;
+}
+
+.landing-navigation .landing-login:hover {
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--teal-dark);
+}
+
 .landing-navigation .landing-nav-cta {
   display: inline-flex;
   min-height: 42px;
@@ -1697,11 +1714,6 @@ textarea:focus-visible {
 
   .landing-navigation {
     gap: 16px;
-  }
-
-  .landing-navigation > a:first-child,
-  .landing-navigation .landing-login {
-    display: none;
   }
 
   .landing-navigation .landing-nav-cta {

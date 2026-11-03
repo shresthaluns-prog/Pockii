@@ -73,12 +73,13 @@ test(
     const users = [userOne, userTwo];
     userIds.push(...users.map(({ _id }) => _id));
     const tokens = users.map(({ _id }) => accessToken(_id));
-    const [categoryOne, categoryTwo, incomeCategory] = await Category.create([
+    const [categoryOne, categoryTwo, incomeCategory, categoryThree] = await Category.create([
       { userId: userOne._id, name: `Expense One ${suffix}`, type: "expense" },
       { userId: userTwo._id, name: `Expense Two ${suffix}`, type: "expense" },
       { userId: userOne._id, name: `Income One ${suffix}`, type: "income" },
+      { userId: userOne._id, name: `Expense Three ${suffix}`, type: "expense" },
     ]);
-    categoryIds.push(categoryOne._id, categoryTwo._id, incomeCategory._id);
+    categoryIds.push(categoryOne._id, categoryTwo._id, incomeCategory._id, categoryThree._id);
     server = createServer(app);
 
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -136,7 +137,7 @@ test(
     const customBudgetResponse = await request(baseUrl, tokens[0], "/budgets", {
       method: "POST",
       body: {
-        amountMinor: 5000,
+        amountMinor: 50000,
         currency: "usd",
         periodType: "custom",
         startDate: "2026-03-01",
@@ -147,15 +148,15 @@ test(
     const customBudget = customBudgetResponse.body.data;
     budgetIds.push(customBudget._id);
     assert.equal(customBudget.spentMinor, 7000, JSON.stringify(customBudget));
-    assert.equal(customBudget.remainingMinor, -2000);
-    assert.equal(customBudget.percentageUsed, 140);
-    assert.equal(customBudget.status, "over_budget");
+    assert.equal(customBudget.remainingMinor, 43000);
+    assert.equal(customBudget.percentageUsed, 14);
+    assert.equal(customBudget.status, "on_track");
 
     const categoryBudgetResponse = await request(baseUrl, tokens[0], "/budgets", {
       method: "POST",
       body: {
         categoryId: categoryOne._id.toString(),
-        amountMinor: 10000,
+        amountMinor: 30000,
         currency: "USD",
         periodType: "custom",
         startDate: "2026-03-01",
@@ -166,9 +167,37 @@ test(
     const categoryBudget = categoryBudgetResponse.body.data;
     budgetIds.push(categoryBudget._id);
     assert.equal(categoryBudget.spentMinor, 7000);
-    assert.equal(categoryBudget.remainingMinor, 3000);
-    assert.equal(categoryBudget.percentageUsed, 70);
+    assert.equal(categoryBudget.remainingMinor, 23000);
+    assert.equal(categoryBudget.percentageUsed, 23.33);
     assert.equal(categoryBudget.status, "on_track");
+
+    const categoryBudgetOverRemaining = await request(baseUrl, tokens[0], "/budgets", {
+      method: "POST",
+      body: {
+        categoryId: categoryThree._id.toString(),
+        amountMinor: 13001,
+        currency: "USD",
+        periodType: "custom",
+        startDate: "2026-03-01",
+        endDate: "2026-03-10",
+      },
+    });
+    assert.equal(categoryBudgetOverRemaining.status, 400);
+    assert.match(categoryBudgetOverRemaining.body.message, /remaining overall budget/);
+
+    const categoryWithoutOverall = await request(baseUrl, tokens[0], "/budgets", {
+      method: "POST",
+      body: {
+        categoryId: categoryThree._id.toString(),
+        amountMinor: 1000,
+        currency: "USD",
+        periodType: "custom",
+        startDate: "2026-05-01",
+        endDate: "2026-05-10",
+      },
+    });
+    assert.equal(categoryWithoutOverall.status, 400);
+    assert.match(categoryWithoutOverall.body.message, /Create an overall budget/);
 
     const emptyBudgetResponse = await request(baseUrl, tokens[0], "/budgets", {
       method: "POST",
@@ -204,6 +233,7 @@ test(
       method: "POST",
       body: {
         amountMinor: 100000,
+        currency: "USD",
         periodType: "monthly",
         startDate: "2026-03-21",
       },
@@ -212,6 +242,52 @@ test(
     budgetIds.push(monthlyResponse.body.data._id);
     assert.equal(monthlyResponse.body.data.startDate, "2026-03-01T00:00:00.000Z");
     assert.equal(monthlyResponse.body.data.endDate, "2026-04-01T00:00:00.000Z");
+
+    const firstMonthlyCategory = await request(baseUrl, tokens[0], "/budgets", {
+      method: "POST",
+      body: {
+        categoryId: categoryOne._id.toString(),
+        amountMinor: 60000,
+        currency: "USD",
+        periodType: "monthly",
+        startDate: "2026-03-05",
+      },
+    });
+    assert.equal(firstMonthlyCategory.status, 201);
+    budgetIds.push(firstMonthlyCategory.body.data._id);
+
+    const categoryAllocationUpdateExceeded = await request(
+      baseUrl,
+      tokens[0],
+      `/budgets/${firstMonthlyCategory.body.data._id}`,
+      { method: "PATCH", body: { amountMinor: 100001 } },
+    );
+    assert.equal(categoryAllocationUpdateExceeded.status, 400);
+    assert.match(categoryAllocationUpdateExceeded.body.message, /cannot exceed the remaining overall budget/);
+
+    const categoryAllocationExceeded = await request(baseUrl, tokens[0], "/budgets", {
+      method: "POST",
+      body: {
+        categoryId: categoryThree._id.toString(),
+        amountMinor: 40001,
+        currency: "USD",
+        periodType: "monthly",
+        startDate: "2026-03-20",
+      },
+    });
+    assert.equal(categoryAllocationExceeded.status, 400);
+    assert.match(categoryAllocationExceeded.body.message, /cannot exceed the remaining overall budget/);
+
+    const overallBelowAllocations = await request(baseUrl, tokens[0], `/budgets/${monthlyResponse.body.data._id}`, {
+      method: "PATCH",
+      body: { amountMinor: 59999 },
+    });
+    assert.equal(overallBelowAllocations.status, 400);
+
+    const deleteOverallWithAllocations = await request(baseUrl, tokens[0], `/budgets/${monthlyResponse.body.data._id}`, {
+      method: "DELETE",
+    });
+    assert.equal(deleteOverallWithAllocations.status, 409);
 
     const foreignCategoryBudget = await request(baseUrl, tokens[0], "/budgets", {
       method: "POST",
@@ -238,13 +314,13 @@ test(
     const listedBudgets = await request(baseUrl, tokens[0], "/budgets?page=1&limit=2");
     assert.equal(listedBudgets.status, 200);
     assert.equal(listedBudgets.body.data.length, 2);
-    assert.equal(listedBudgets.body.pagination.total, 5);
+    assert.equal(listedBudgets.body.pagination.total, 6);
     const categoryScopedBudgets = await request(
       baseUrl,
       tokens[0],
       `/budgets?scope=category&categoryId=${categoryOne._id.toString()}`,
     );
-    assert.equal(categoryScopedBudgets.body.pagination.total, 1);
+    assert.equal(categoryScopedBudgets.body.pagination.total, 2);
     const overallBudgets = await request(baseUrl, tokens[0], "/budgets?scope=overall");
     assert.equal(overallBudgets.body.pagination.total, 4);
 
@@ -262,12 +338,12 @@ test(
 
     const ownPatch = await request(baseUrl, tokens[0], `/budgets/${customBudget._id}`, {
       method: "PATCH",
-      body: { amountMinor: 6000 },
+      body: { amountMinor: 60000 },
     });
     assert.equal(ownPatch.status, 200);
-    assert.equal(ownPatch.body.data.amountMinor, 6000);
+    assert.equal(ownPatch.body.data.amountMinor, 60000);
     assert.equal(ownPatch.body.data.spentMinor, 7000);
-    assert.equal(ownPatch.body.data.status, "over_budget");
+    assert.equal(ownPatch.body.data.status, "on_track");
 
     const ownDelete = await request(baseUrl, tokens[0], `/budgets/${emptyBudget._id}`, {
       method: "DELETE",

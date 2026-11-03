@@ -43,6 +43,35 @@ function dateInputValue(value) {
   return value ? new Date(value).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
 }
 
+function getBudgetPeriodBounds(periodType, startDate, endDate) {
+  if (!startDate) return null;
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  if (Number.isNaN(start.getTime())) return null;
+
+  if (periodType === "weekly") {
+    start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 7);
+    return { startDate: start.toISOString(), endDate: end.toISOString() };
+  }
+  if (periodType === "monthly") {
+    const normalizedStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+    const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+    return { startDate: normalizedStart.toISOString(), endDate: end.toISOString() };
+  }
+  if (!endDate) return null;
+  const end = new Date(`${endDate}T00:00:00.000Z`);
+  if (Number.isNaN(end.getTime()) || end <= start) return null;
+  return { startDate: start.toISOString(), endDate: end.toISOString() };
+}
+
+function getBudgetCategoryId(budget) {
+  const categoryId = budget.categoryId;
+  if (!categoryId) return null;
+  if (typeof categoryId === "object") return String(categoryId._id ?? categoryId);
+  return String(categoryId);
+}
+
 function emptyValues() {
   return {
     scope: "overall",
@@ -72,7 +101,51 @@ function BudgetsPage() {
   const { reset } = form;
   const scope = useWatch({ control: form.control, name: "scope" });
   const periodType = useWatch({ control: form.control, name: "periodType" });
+  const amount = useWatch({ control: form.control, name: "amount" });
+  const currency = useWatch({ control: form.control, name: "currency" });
+  const startDate = useWatch({ control: form.control, name: "startDate" });
+  const endDate = useWatch({ control: form.control, name: "endDate" });
   const expenses = (categoriesQuery.data ?? []).filter((category) => category.type === "expense");
+  const budgets = budgetsQuery.data ?? [];
+  const periodBounds = getBudgetPeriodBounds(periodType, startDate, endDate);
+  const currencyCode = String(currency ?? "").trim().toUpperCase();
+  const samePeriodAndCurrency = (budget) =>
+    budget.currency === currencyCode &&
+    periodBounds &&
+    new Date(budget.startDate).toISOString() === periodBounds.startDate &&
+    new Date(budget.endDate).toISOString() === periodBounds.endDate;
+  const overallBudget = budgets.find(
+    (budget) => !getBudgetCategoryId(budget) && budget._id !== editing?._id && samePeriodAndCurrency(budget),
+  );
+  const editingOverallBudget =
+    editing && !getBudgetCategoryId(editing) && samePeriodAndCurrency(editing) ? editing : null;
+  const allocatedCategoryMinor = budgets
+    .filter(
+      (budget) =>
+        getBudgetCategoryId(budget) &&
+        budget._id !== editing?._id &&
+        samePeriodAndCurrency(budget),
+    )
+    .reduce((total, budget) => total + budget.amountMinor, 0);
+  const availableCategoryMinor = overallBudget
+    ? Math.max(0, overallBudget.remainingMinor - allocatedCategoryMinor)
+    : 0;
+  const overallSpentMinor = (overallBudget ?? editingOverallBudget)?.spentMinor ?? 0;
+  let enteredAmountMinor = null;
+  try {
+    if (amount) enteredAmountMinor = amountToMinor(amount, currencyCode);
+  } catch {
+    enteredAmountMinor = null;
+  }
+  const categoryAmountExceeded =
+    scope === "category" &&
+    enteredAmountMinor !== null &&
+    overallBudget &&
+    enteredAmountMinor > availableCategoryMinor;
+  const overallAmountBelowAllocations =
+    scope === "overall" &&
+    enteredAmountMinor !== null &&
+    enteredAmountMinor < allocatedCategoryMinor + overallSpentMinor;
 
   useEffect(() => {
     if (editing) {
@@ -140,8 +213,6 @@ function BudgetsPage() {
   }
 
   const fieldError = form.formState.errors;
-  const budgets = budgetsQuery.data ?? [];
-
   function openCreateForm() {
     setEditing(null);
     setFormError("");
@@ -165,7 +236,7 @@ function BudgetsPage() {
       {formError && <Notice>{formError}</Notice>}
       {formOpen && (
         <Modal
-          description="Spending totals update from matching expense transactions."
+          description="Category budgets must fit within the matching overall budget."
           onClose={closeForm}
           title={editing ? "Edit budget" : "Create a budget"}
         >
@@ -200,6 +271,31 @@ function BudgetsPage() {
                 {fieldError.currency && <span className="mt-1 block text-xs text-rose-700">{fieldError.currency.message}</span>}
               </label>
             </div>
+            {scope === "category" && (
+              <div className="text-xs leading-5" role="status">
+                {budgetsQuery.isPending && <p className="text-slate-500">Loading the overall budget for this period…</p>}
+                {budgetsQuery.isError && <p className="text-rose-700">Could not verify the overall budget: {budgetsQuery.error.message}</p>}
+                {budgetsQuery.isSuccess && !overallBudget && (
+                  <p className="text-rose-700">Create an overall budget for this period and currency before adding category budgets.</p>
+                )}
+                {overallBudget && (
+                  <p className="text-slate-600">
+                    Available for category budgets: <strong>{formatMoney(availableCategoryMinor, currencyCode)}</strong> of {formatMoney(overallBudget.remainingMinor, currencyCode)} remaining in the overall budget.
+                  </p>
+                )}
+                {categoryAmountExceeded && (
+                  <p className="mt-1 text-rose-700" role="alert">This limit exceeds the unspent amount remaining in the overall budget.</p>
+                )}
+              </div>
+            )}
+            {scope === "overall" && allocatedCategoryMinor > 0 && (
+              <p className="text-xs leading-5 text-slate-600" role="status">
+                This period already has {formatMoney(overallSpentMinor, currencyCode)} spent and {formatMoney(allocatedCategoryMinor, currencyCode)} allocated to categories.
+                {overallAmountBelowAllocations && (
+                  <span className="mt-1 block text-rose-700" role="alert">The overall limit must cover both spending to date and category allocations.</span>
+                )}
+              </p>
+            )}
             <label className="block text-sm font-medium text-slate-700">
               Period
               <select className={inputClass} {...form.register("periodType")}>
@@ -222,7 +318,20 @@ function BudgetsPage() {
             )}
             <p className="text-xs leading-5 text-slate-500">Weekly and monthly dates are normalized using UTC. Custom end dates are exclusive.</p>
             <div className="flex flex-wrap gap-2">
-              <button className={buttonClass} disabled={saveMutation.isPending || (scope === "category" && expenses.length === 0)} type="submit">
+              <button
+                className={buttonClass}
+                disabled={
+                  saveMutation.isPending ||
+                  (scope === "category" &&
+                    (expenses.length === 0 ||
+                      budgetsQuery.isPending ||
+                      budgetsQuery.isError ||
+                      !overallBudget ||
+                      categoryAmountExceeded)) ||
+                  overallAmountBelowAllocations
+                }
+                type="submit"
+              >
                 {saveMutation.isPending ? "Saving…" : editing ? "Save changes" : "Add budget"}
               </button>
               <button className={secondaryButtonClass} onClick={closeForm} type="button">Cancel</button>

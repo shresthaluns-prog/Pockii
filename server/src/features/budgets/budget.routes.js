@@ -51,6 +51,50 @@ function createPayload(values, userId) {
   };
 }
 
+async function findAllocationContext(userId, candidate, excludedBudgetId) {
+  const matchingPeriod = {
+    currency: candidate.currency,
+    startDate: candidate.startDate,
+    endDate: candidate.endDate,
+  };
+  const excluded = excludedBudgetId ? { _id: { $ne: excludedBudgetId } } : {};
+  const [overallBudget, categoryBudgets] = await Promise.all([
+    budgetService.withSpending(userId, {
+      ...matchingPeriod,
+      categoryId: null,
+    }).then(([budget]) => budget ?? null),
+    Budget.find({
+      userId,
+      ...matchingPeriod,
+      categoryId: { $ne: null },
+      ...excluded,
+    }).select("amountMinor").lean(),
+  ]);
+  return { overallBudget, categoryBudgets };
+}
+
+function getAllocationError(candidate, { overallBudget, categoryBudgets }) {
+  const allocatedMinor = categoryBudgets.reduce(
+    (total, budget) => total + BigInt(budget.amountMinor),
+    0n,
+  );
+  if (candidate.categoryId) {
+    if (!overallBudget) {
+      return "Create an overall budget for the same period and currency before adding category budgets.";
+    }
+    const remainingMinor = BigInt(overallBudget.remainingMinor);
+    if (allocatedMinor + BigInt(candidate.amountMinor) > remainingMinor) {
+      return "Category budgets cannot exceed the remaining overall budget for this period and currency.";
+    }
+  } else if (overallBudget) {
+    const remainingMinor = BigInt(candidate.amountMinor) - BigInt(overallBudget.spentMinor);
+    if (allocatedMinor > remainingMinor) {
+      return "The remaining overall budget cannot be lower than the total of its category budgets.";
+    }
+  }
+  return null;
+}
+
 budgetRouter
   .route("/")
   .get(validate(listBudgetsSchema, "query"), async (req, res, next) => {
@@ -78,6 +122,12 @@ budgetRouter
       const payload = createPayload(req.validated.body, req.authUser.id);
       if (!(await validateCategory(req.authUser.id, payload.categoryId))) {
         return res.status(404).json({ success: false, message: "Expense category not found." });
+      }
+
+      const allocationContext = await findAllocationContext(req.authUser.id, payload);
+      const allocationError = getAllocationError(payload, allocationContext);
+      if (allocationError) {
+        return res.status(400).json({ success: false, message: allocationError });
       }
 
       const budget = await Budget.create(payload);
@@ -142,6 +192,22 @@ budgetRouter
       }
 
       const period = budgetPeriodFields(periodValues);
+      const candidate = {
+        categoryId,
+        amountMinor: updates.amountMinor ?? existing.amountMinor,
+        currency: updates.currency ?? existing.currency,
+        ...period,
+      };
+      const allocationContext = await findAllocationContext(
+        req.authUser.id,
+        candidate,
+        existing._id,
+      );
+      const allocationError = getAllocationError(candidate, allocationContext);
+      if (allocationError) {
+        return res.status(400).json({ success: false, message: allocationError });
+      }
+
       Object.assign(existing, updates, { categoryId, ...period });
       await existing.save();
       res.json({ success: true, data: await budgetService.getById(req.authUser.id, existing._id) });
@@ -157,11 +223,21 @@ budgetRouter
   })
   .delete(async (req, res, next) => {
     try {
-      const budget = await Budget.findOneAndDelete({
+      const budget = await Budget.findOne({
         _id: req.validated.params,
         userId: req.authUser.id,
       });
       if (!budget) return res.status(404).json({ success: false, message: "Budget not found." });
+      if (!budget.categoryId) {
+        const allocationContext = await findAllocationContext(req.authUser.id, budget, budget._id);
+        if (allocationContext.categoryBudgets.length > 0) {
+          return res.status(409).json({
+            success: false,
+            message: "Delete this budget's category budgets before deleting the overall budget.",
+          });
+        }
+      }
+      await budget.deleteOne();
       res.status(204).end();
     } catch (error) {
       next(error);

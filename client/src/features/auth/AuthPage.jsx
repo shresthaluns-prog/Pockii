@@ -25,8 +25,8 @@ function getAuthSchema(isRegistering) {
   }).strict();
 }
 
-function AuthPage() {
-  const [isRegistering, setIsRegistering] = useState(false);
+function AuthPage({ initialMode = "login" }) {
+  const [isRegistering, setIsRegistering] = useState(initialMode === "register");
   const { login, register } = useAuth();
   const [serverError, setServerError] = useState("");
   const schema = useMemo(() => getAuthSchema(isRegistering), [isRegistering]);
