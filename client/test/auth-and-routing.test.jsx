@@ -104,15 +104,29 @@ describe("authentication form", () => {
 });
 
 describe("protected routes", () => {
-  it("redirects unauthenticated users to sign-in", () => {
+  it("shows the landing page to unauthenticated users, including for protected URLs", () => {
     render(
       <MemoryRouter initialEntries={["/transactions"]}>
         <App />
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Small steps\.\s*Smarter money\./ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Start your free account/ })).toHaveAttribute("href", "/auth");
     expect(screen.queryByRole("heading", { name: "Transactions" })).not.toBeInTheDocument();
+  });
+
+  it("opens sign-in from the landing page", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("link", { name: /Start your free account/ }));
+
+    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
   });
 
   it("shows navigation after the user is authenticated", () => {

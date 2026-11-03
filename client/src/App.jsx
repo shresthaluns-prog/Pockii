@@ -7,6 +7,7 @@ import CategoriesPage from "./features/categories/CategoriesPage.jsx";
 import TransactionsPage from "./features/expenses/TransactionsPage.jsx";
 import SettingsPage from "./features/settings/SettingsPage.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
+import LandingPage from "./pages/LandingPage.jsx";
 import WorkspaceSnapshot from "./components/WorkspaceSnapshot.jsx";
 import { Modal, secondaryButtonClass } from "./components/ui.jsx";
 
@@ -41,19 +42,28 @@ function App() {
     return <main className="session-loading">Restoring your session…</main>;
   }
 
+  const unauthenticatedRoutes = (
+    <Routes>
+      <Route element={<LandingPage />} path="/" />
+      <Route element={<AuthPage />} path="/auth" />
+      <Route element={<Navigate replace to="/" />} path="*" />
+    </Routes>
+  );
+
   if (!user) {
     return (
-      <div className="auth-canvas">
-        <div className="auth-brand">
-          <BrandMark />
-          <span>Pockii</span>
-        </div>
-        <main className="auth-content">
-          <Routes>
-            <Route element={<AuthPage />} path="/auth" />
-            <Route element={<Navigate replace to="/auth" />} path="*" />
-          </Routes>
-        </main>
+      <div className={`auth-canvas${location.pathname === "/" ? " landing-canvas" : ""}`}>
+        {location.pathname === "/" ? (
+          <div className="landing-content">{unauthenticatedRoutes}</div>
+        ) : (
+          <>
+            <div className="auth-brand">
+              <BrandMark />
+              <span>Pockii</span>
+            </div>
+            <main className="auth-content">{unauthenticatedRoutes}</main>
+          </>
+        )}
       </div>
     );
   }
