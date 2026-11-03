@@ -61,6 +61,22 @@ afterEach(() => {
 });
 
 describe("category budget allocations", () => {
+  it("uses the themed period dropdown and shows the custom end date when selected", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: /Create budget/ }));
+    const dialog = screen.getByRole("dialog");
+    const periodTrigger = within(dialog).getByRole("button", { name: "Period Monthly" });
+    expect(periodTrigger).toBeInTheDocument();
+
+    await user.click(periodTrigger);
+    await user.click(within(dialog).getByRole("menuitemradio", { name: "Custom date range" }));
+
+    expect(within(dialog).getByRole("button", { name: "Period Custom date range" })).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("End date (exclusive)")).toBeInTheDocument();
+  });
+
   it("requires a matching overall budget before allowing a category budget", async () => {
     const user = userEvent.setup();
     renderPage();

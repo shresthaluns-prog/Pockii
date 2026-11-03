@@ -330,6 +330,129 @@ function BudgetCategoryDropdown({ categories, form, error }) {
   );
 }
 
+function BudgetPeriodDropdown({ value, onChange, register }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const options = [
+    { value: "weekly", label: "Weekly", description: "Monday through Sunday", icon: "▦" },
+    { value: "monthly", label: "Monthly", description: "UTC calendar month", icon: "▣" },
+    { value: "custom", label: "Custom date range", description: "Choose your own start and end dates", icon: "↔" },
+  ];
+  const selectedOption = options.find((option) => option.value === value) ?? options[1];
+  const labelId = "budget-period-label";
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    function closeOnOutsideClick(event) {
+      if (!containerRef.current?.contains(event.target)) setIsOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [isOpen]);
+
+  function closeMenu(restoreFocus = false) {
+    setIsOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  }
+
+  function handleMenuKeyDown(event) {
+    const items = [...(menuRef.current?.querySelectorAll('[role="menuitemradio"]') ?? [])];
+    const currentIndex = items.indexOf(document.activeElement);
+    let nextIndex;
+    if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+    if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + items.length) % items.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = items.length - 1;
+    if (nextIndex !== undefined && items.length > 0) {
+      event.preventDefault();
+      items[nextIndex].focus();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu(true);
+    }
+  }
+
+  return (
+    <div
+      className="relative"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsOpen(false);
+      }}
+      ref={containerRef}
+    >
+      <span className="block text-sm font-medium text-slate-700" id={labelId}>Period</span>
+      <input type="hidden" {...register("periodType")} />
+      <button
+        aria-controls="budget-period-menu"
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        aria-labelledby={`${labelId} budget-period-selected-value`}
+        className="budget-scope-trigger mt-1 flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition hover:border-teal-300 hover:bg-teal-50/30 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-100"
+        onClick={() => setIsOpen((open) => !open)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && !isOpen) {
+            event.preventDefault();
+            setIsOpen(true);
+            requestAnimationFrame(() => menuRef.current?.querySelector("button")?.focus());
+          }
+        }}
+        ref={triggerRef}
+        type="button"
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span aria-hidden="true" className="budget-scope-icon">{selectedOption.icon}</span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-slate-800" id="budget-period-selected-value">{selectedOption.label}</span>
+            <span className="mt-0.5 block truncate text-xs font-normal text-slate-500">{selectedOption.description}</span>
+          </span>
+        </span>
+        <svg aria-hidden="true" className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 20 20" stroke="currentColor">
+          <path d="m5 7.5 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+        </svg>
+      </button>
+      {isOpen && (
+        <div
+          aria-labelledby={labelId}
+          className="budget-scope-menu absolute z-30 mt-2 w-full rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10"
+          id="budget-period-menu"
+          onKeyDown={handleMenuKeyDown}
+          ref={menuRef}
+          role="menu"
+        >
+          {options.map((option) => {
+            const isSelected = option.value === value;
+            return (
+              <button
+                aria-checked={isSelected}
+                aria-label={option.label}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${
+                  isSelected ? "bg-teal-50 text-teal-950" : "text-slate-700 hover:bg-slate-50"
+                }`}
+                key={option.value}
+                onClick={() => {
+                  onChange(option.value);
+                  closeMenu(true);
+                }}
+                role="menuitemradio"
+                type="button"
+              >
+                <span aria-hidden="true" className={`budget-scope-icon ${isSelected ? "is-selected" : ""}`}>{option.icon}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">{option.label}</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">{option.description}</span>
+                </span>
+                {isSelected && <span aria-hidden="true" className="text-sm font-bold text-teal-700">✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function emptyValues() {
   return {
     scope: "overall",
@@ -549,14 +672,11 @@ function BudgetsPage() {
                 )}
               </p>
             )}
-            <label className="block text-sm font-medium text-slate-700">
-              Period
-              <select className={inputClass} {...form.register("periodType")}>
-                <option value="weekly">Weekly (Monday through Sunday)</option>
-                <option value="monthly">Monthly (UTC calendar month)</option>
-                <option value="custom">Custom date range</option>
-              </select>
-            </label>
+            <BudgetPeriodDropdown
+              onChange={(value) => form.setValue("periodType", value, { shouldDirty: true, shouldValidate: true })}
+              register={form.register}
+              value={periodType}
+            />
             <label className="block text-sm font-medium text-slate-700">
               {periodType === "monthly" ? "Any day in the month" : periodType === "weekly" ? "Any day in the week" : "Start date (inclusive)"}
               <input className={inputClass} type="date" {...form.register("startDate")} />
