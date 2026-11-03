@@ -35,7 +35,6 @@ function LandingPage() {
           <span>Pockii</span>
         </Link>
         <nav aria-label="Landing page navigation" className="landing-navigation">
-          <a href="#features">Why Pockii</a>
           <Link className="landing-login" to="/auth">Log in</Link>
           <Link className="landing-nav-cta" to="/auth">Get started <span aria-hidden="true">→</span></Link>
         </nav>
