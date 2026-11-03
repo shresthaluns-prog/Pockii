@@ -19,6 +19,7 @@ import { listTransactions } from "../features/expenses/transactionsApi.js";
 import { fetchReport } from "../features/reports/reportsApi.js";
 import { loadPreferences, subscribeToPreferences } from "../features/settings/preferences.js";
 import { amountToMinor, formatMoney } from "../utils/money.js";
+import DashboardBudgetAlerts from "./DashboardBudgetAlerts.jsx";
 import {
   createTrendChartData,
   getCurrentMonthRange,
@@ -170,6 +171,7 @@ function DashboardPage() {
       </header>
 
       {reportQuery.isError && <Notice>{reportQuery.error.message}</Notice>}
+      <DashboardBudgetAlerts categories={categoriesQuery.data ?? []} />
       {reportQuery.isPending ? (
         <Panel><LoadingState label="Loading dashboard analytics…" /></Panel>
       ) : reportQuery.isSuccess ? (
