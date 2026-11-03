@@ -999,11 +999,11 @@ textarea:focus-visible {
 
 @media (min-width: 1280px) {
   .dashboard-analytics-grid > .ui-panel {
-    min-height: 334px;
+    min-height: 450px;
   }
 
   .dashboard-chart-panel > div:last-child > div {
-    height: 242px !important;
+    height: 358px !important;
   }
 
 }
@@ -1225,7 +1225,7 @@ textarea:focus-visible {
   }
 
   .dashboard-chart-panel > div:last-child > div {
-    height: 255px !important;
+    height: 320px !important;
   }
 
   .dashboard-date-form {
