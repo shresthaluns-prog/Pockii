@@ -31,6 +31,10 @@ const categories = [
   { _id: "food-id", name: "Food", type: "expense", color: "#f59e0b" },
   { _id: "rent-id", name: "Rent", type: "expense", color: "#6366f1" },
   { _id: "shopping-id", name: "Shopping", type: "expense", color: "#14b8a6" },
+  { _id: "travel-id", name: "Travel", type: "expense", color: "#8b5cf6" },
+  { _id: "utilities-id", name: "Utilities", type: "expense", color: "#f97316" },
+  { _id: "health-id", name: "Health", type: "expense", color: "#ef4444" },
+  { _id: "miscellaneous-id", name: "Miscellaneous", type: "expense", color: "#64748b" },
   { _id: "salary-id", name: "Salary", type: "income", color: "#10b981" },
 ];
 
@@ -66,8 +70,11 @@ describe("Quick Add category dropdown", () => {
 
     await user.click(await screen.findByRole("button", { name: "Category Select category" }));
     const menu = screen.getByRole("menu");
+    expect(menu.parentElement).toBe(document.body);
+    expect(menu).toHaveClass("fixed", "overflow-y-auto");
     const foodOption = within(menu).getByRole("menuitemradio", { name: "Food" });
     expect(within(menu).getByRole("menuitemradio", { name: "Shopping" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitemradio", { name: "Miscellaneous" })).toBeInTheDocument();
     expect(foodOption).toHaveAttribute("aria-checked", "false");
     expect(within(menu).queryByRole("menuitemradio", { name: "Salary" })).not.toBeInTheDocument();
 

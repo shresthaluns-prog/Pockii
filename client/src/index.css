@@ -894,6 +894,97 @@ textarea:focus-visible {
   padding-bottom: 10px !important;
 }
 
+.dashboard-budget-alerts-panel {
+  border-color: rgba(214, 77, 77, 0.38) !important;
+  background: rgba(255, 245, 245, 0.96) !important;
+}
+
+.dashboard-budget-alerts-panel > div:first-child h2 {
+  color: #913e46;
+}
+
+.dashboard-budget-alerts-panel > div:first-child p {
+  color: #9c7175;
+}
+
+.dashboard-budget-alerts {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboard-budget-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 15px;
+  border: 1px solid rgba(214, 77, 77, 0.2);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.dashboard-budget-alert-icon {
+  display: grid;
+  width: 35px;
+  height: 35px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: #ffe8e7;
+  color: #d64d4d;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.dashboard-budget-alert-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 6px;
+}
+
+.dashboard-budget-alert-copy strong {
+  color: #913e46;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-budget-alert-copy > span {
+  color: #9c7175;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.dashboard-budget-alert-track {
+  height: 5px;
+  margin-top: 2px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #f6e2e4;
+}
+
+.dashboard-budget-alert-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #d46b73;
+}
+
+.dashboard-budget-alert.is-over-budget {
+  border-color: rgba(190, 62, 72, 0.3);
+  background: rgba(255, 250, 250, 0.95);
+}
+
+.dashboard-budget-alert.is-over-budget .dashboard-budget-alert-icon {
+  background: #fde1e4;
+  color: #bd4751;
+}
+
 .dashboard-bottom-grid {
   align-items: stretch;
 }
@@ -937,110 +1028,6 @@ textarea:focus-visible {
 
   .workspace-snapshot--summary {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .dashboard-budget-alerts-panel {
-    border-color: #f0dfb8 !important;
-    background: linear-gradient(120deg, rgba(255, 251, 239, 0.96), rgba(255, 255, 255, 0.94)) !important;
-  }
-
-  .dashboard-budget-alerts-panel > div:first-child h2 {
-    color: #584525;
-  }
-
-  .dashboard-budget-alerts-panel > div:first-child p {
-    color: #8a7959;
-  }
-
-  .dashboard-budget-alerts {
-    display: grid;
-    gap: 10px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .dashboard-budget-alert {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 13px 14px;
-    border: 1px solid #f1e4c8;
-    border-radius: 13px;
-    background: rgba(255, 255, 255, 0.82);
-  }
-
-  .dashboard-budget-alert-icon {
-    display: grid;
-    width: 31px;
-    height: 31px;
-    flex: 0 0 auto;
-    place-items: center;
-    border-radius: 10px;
-    background: #fff3d8;
-    color: #a76a13;
-    font-size: 15px;
-    font-weight: 800;
-  }
-
-  .dashboard-budget-alert-copy {
-    display: grid;
-    min-width: 0;
-    flex: 1;
-    gap: 4px;
-  }
-
-  .dashboard-budget-alert-copy strong {
-    color: #66512c;
-    font-size: 12px;
-    font-weight: 650;
-    line-height: 1.55;
-  }
-
-  .dashboard-budget-alert-copy > span {
-    color: #8d7d60;
-    font-size: 10px;
-  }
-
-  .dashboard-budget-alert-track {
-    height: 5px;
-    margin-top: 5px;
-    overflow: hidden;
-    border-radius: 99px;
-    background: #f2ead9;
-  }
-
-  .dashboard-budget-alert-track > span {
-    display: block;
-    height: 100%;
-    border-radius: inherit;
-    background: #d7a540;
-  }
-
-  .dashboard-budget-alert.is-over-budget {
-    border-color: #f2d5d7;
-    background: rgba(255, 250, 250, 0.9);
-  }
-
-  .dashboard-budget-alert.is-over-budget .dashboard-budget-alert-icon {
-    background: #fde9eb;
-    color: #bd4751;
-  }
-
-  .dashboard-budget-alert.is-over-budget .dashboard-budget-alert-copy strong {
-    color: #913e46;
-  }
-
-  .dashboard-budget-alert.is-over-budget .dashboard-budget-alert-copy > span {
-    color: #9c7175;
-  }
-
-  .dashboard-budget-alert.is-over-budget .dashboard-budget-alert-track {
-    background: #f6e2e4;
-  }
-
-  .dashboard-budget-alert.is-over-budget .dashboard-budget-alert-track > span {
-    background: #d46b73;
   }
 
   .dashboard-analytics-grid {

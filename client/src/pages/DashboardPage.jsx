@@ -533,6 +533,7 @@ function QuickSelectDropdown({ form, label, name, options }) {
 
 function CategoryDropdown({ categories, disabled, error, form, onOpen }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState(null);
   const selectedCategoryId = useWatch({ control: form.control, name: "categoryId" });
   const containerRef = useRef(null);
   const triggerRef = useRef(null);
@@ -542,12 +543,43 @@ function CategoryDropdown({ categories, disabled, error, form, onOpen }) {
 
   useEffect(() => {
     if (!isOpen) return undefined;
-    function closeOnOutsideClick(event) {
-      if (!containerRef.current?.contains(event.target)) setIsOpen(false);
+    function updateMenuPosition() {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const gap = 8;
+      const desiredHeight = Math.min(256, categories.length * 52 + 12);
+      const spaceBelow = window.innerHeight - rect.bottom - gap;
+      const spaceAbove = rect.top - gap;
+      const openAbove = spaceBelow < desiredHeight && spaceAbove > spaceBelow;
+      const availableHeight = Math.max(0, openAbove ? spaceAbove : spaceBelow);
+      const menuHeight = Math.min(desiredHeight, availableHeight);
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8));
+      setMenuPosition({
+        left,
+        top: openAbove ? Math.max(8, rect.top - menuHeight - gap) : rect.bottom + gap,
+        maxHeight: Math.max(0, Math.min(256, availableHeight)),
+        width: Math.min(rect.width, window.innerWidth - left - 8),
+      });
     }
+
+    function closeOnOutsideClick(event) {
+      if (
+        !containerRef.current?.contains(event.target) &&
+        !menuRef.current?.contains(event.target)
+      ) {
+        setIsOpen(false);
+      }
+    }
+    updateMenuPosition();
     document.addEventListener("pointerdown", closeOnOutsideClick);
-    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
-  }, [isOpen]);
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [categories.length, isOpen]);
 
   function closeMenu(restoreFocus = false) {
     setIsOpen(false);
@@ -575,7 +607,12 @@ function CategoryDropdown({ categories, disabled, error, form, onOpen }) {
     <div
       className="relative min-w-0 sm:col-span-2 xl:col-span-2"
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setIsOpen(false);
+        if (
+          !event.currentTarget.contains(event.relatedTarget) &&
+          !menuRef.current?.contains(event.relatedTarget)
+        ) {
+          setIsOpen(false);
+        }
       }}
       ref={containerRef}
     >
@@ -616,14 +653,21 @@ function CategoryDropdown({ categories, disabled, error, form, onOpen }) {
           <path d="m5 7.5 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
         </svg>
       </button>
-      {isOpen && (
+      {isOpen && createPortal(
         <div
           aria-labelledby={labelId}
-          className="absolute z-20 mt-2 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10"
+          className="fixed z-50 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10"
           id="quick-add-category-menu"
           onKeyDown={handleMenuKeyDown}
           ref={menuRef}
           role="menu"
+          style={{
+            left: menuPosition?.left ?? 0,
+            maxHeight: menuPosition?.maxHeight ?? "min(16rem, calc(100vh - 16px))",
+            top: menuPosition?.top ?? 0,
+            visibility: menuPosition ? "visible" : "hidden",
+            width: menuPosition?.width ?? 0,
+          }}
         >
           {categories.map((category) => {
             const isSelected = category._id === selectedCategoryId;
@@ -653,7 +697,8 @@ function CategoryDropdown({ categories, disabled, error, form, onOpen }) {
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       )}
       {error && <span className="mt-1 block text-xs text-rose-700">{error}</span>}
     </div>
