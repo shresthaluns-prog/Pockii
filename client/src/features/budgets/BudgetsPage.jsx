@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { listCategories } from "../categories/categoriesApi.js";
@@ -70,6 +70,264 @@ function getBudgetCategoryId(budget) {
   if (!categoryId) return null;
   if (typeof categoryId === "object") return String(categoryId._id ?? categoryId);
   return String(categoryId);
+}
+
+function BudgetScopeDropdown({ value, onChange, register }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const options = [
+    {
+      value: "overall",
+      label: "Overall expenses",
+      description: "Set one limit for all your spending",
+      icon: "◎",
+    },
+    {
+      value: "category",
+      label: "One category",
+      description: "Reserve part of your overall budget",
+      icon: "▦",
+    },
+  ];
+  const selectedOption = options.find((option) => option.value === value) ?? options[0];
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    function closeOnOutsideClick(event) {
+      if (!containerRef.current?.contains(event.target)) setIsOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [isOpen]);
+
+  function closeMenu(restoreFocus = false) {
+    setIsOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  }
+
+  function handleMenuKeyDown(event) {
+    const items = [...(menuRef.current?.querySelectorAll('[role="menuitemradio"]') ?? [])];
+    const currentIndex = items.indexOf(document.activeElement);
+    let nextIndex;
+    if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+    if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + items.length) % items.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = items.length - 1;
+    if (nextIndex !== undefined && items.length > 0) {
+      event.preventDefault();
+      items[nextIndex].focus();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu(true);
+    }
+  }
+
+  return (
+    <div
+      className="relative"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsOpen(false);
+      }}
+      ref={containerRef}
+    >
+      <span className="block text-sm font-medium text-slate-700" id="budget-scope-label">Budget scope</span>
+      <input type="hidden" {...register("scope")} />
+      <button
+        aria-controls="budget-scope-menu"
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        aria-labelledby="budget-scope-label budget-scope-selected-value"
+        className="budget-scope-trigger mt-1 flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition hover:border-teal-300 hover:bg-teal-50/30 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-100"
+        onClick={() => setIsOpen((open) => !open)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && !isOpen) {
+            event.preventDefault();
+            setIsOpen(true);
+            requestAnimationFrame(() => menuRef.current?.querySelector("button")?.focus());
+          }
+        }}
+        ref={triggerRef}
+        type="button"
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span aria-hidden="true" className="budget-scope-icon">{selectedOption.icon}</span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-slate-800" id="budget-scope-selected-value">{selectedOption.label}</span>
+            <span className="mt-0.5 block truncate text-xs font-normal text-slate-500">{selectedOption.description}</span>
+          </span>
+        </span>
+        <svg aria-hidden="true" className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 20 20" stroke="currentColor">
+          <path d="m5 7.5 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+        </svg>
+      </button>
+      {isOpen && (
+        <div
+          aria-labelledby="budget-scope-label"
+          className="budget-scope-menu absolute z-30 mt-2 w-full rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10"
+          id="budget-scope-menu"
+          onKeyDown={handleMenuKeyDown}
+          ref={menuRef}
+          role="menu"
+        >
+          {options.map((option) => {
+            const isSelected = option.value === value;
+            return (
+              <button
+                aria-checked={isSelected}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${
+                  isSelected ? "bg-teal-50 text-teal-950" : "text-slate-700 hover:bg-slate-50"
+                }`}
+                key={option.value}
+                onClick={() => {
+                  onChange(option.value);
+                  closeMenu(true);
+                }}
+                role="menuitemradio"
+                type="button"
+              >
+                <span aria-hidden="true" className={`budget-scope-icon ${isSelected ? "is-selected" : ""}`}>{option.icon}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">{option.label}</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">{option.description}</span>
+                </span>
+                {isSelected && <span aria-hidden="true" className="text-sm font-bold text-teal-700">✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BudgetCategoryDropdown({ categories, form, error }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedCategoryId = useWatch({ control: form.control, name: "categoryId" });
+  const containerRef = useRef(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const selectedCategory = categories.find((category) => category._id === selectedCategoryId);
+  const labelId = "budget-category-label";
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    function closeOnOutsideClick(event) {
+      if (!containerRef.current?.contains(event.target)) setIsOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [isOpen]);
+
+  function closeMenu(restoreFocus = false) {
+    setIsOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  }
+
+  function handleMenuKeyDown(event) {
+    const options = [...(menuRef.current?.querySelectorAll('[role="menuitemradio"]') ?? [])];
+    const currentIndex = options.indexOf(document.activeElement);
+    let nextIndex;
+    if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % options.length;
+    if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + options.length) % options.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = options.length - 1;
+    if (nextIndex !== undefined && options.length > 0) {
+      event.preventDefault();
+      options[nextIndex].focus();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu(true);
+    }
+  }
+
+  return (
+    <div
+      className="relative min-w-0"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsOpen(false);
+      }}
+      ref={containerRef}
+    >
+      <span className="block leading-4 text-sm font-medium text-slate-700" id={labelId}>Expense category</span>
+      <input type="hidden" {...form.register("categoryId")} />
+      <button
+        aria-controls="budget-category-menu"
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        aria-labelledby={`${labelId} budget-category-value`}
+        className={`${inputClass} flex items-center justify-between gap-3 text-left disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400`}
+        disabled={categories.length === 0}
+        onClick={() => setIsOpen((open) => !open)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && !isOpen) {
+            event.preventDefault();
+            setIsOpen(true);
+            requestAnimationFrame(() => menuRef.current?.querySelector("button")?.focus());
+          }
+        }}
+        ref={triggerRef}
+        type="button"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          {selectedCategory ? (
+            <>
+              <span aria-hidden="true" className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: selectedCategory.color }} />
+              <span className="truncate text-slate-900" id="budget-category-value">{selectedCategory.name}</span>
+            </>
+          ) : (
+            <span id="budget-category-value">{categories.length === 0 ? "No categories available" : "Select category"}</span>
+          )}
+        </span>
+        <svg aria-hidden="true" className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 20 20" stroke="currentColor">
+          <path d="m5 7.5 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+        </svg>
+      </button>
+      {isOpen && (
+        <div
+          aria-labelledby={labelId}
+          className="absolute z-30 mt-2 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10"
+          id="budget-category-menu"
+          onKeyDown={handleMenuKeyDown}
+          ref={menuRef}
+          role="menu"
+        >
+          {categories.length ? categories.map((category) => {
+            const isSelected = category._id === selectedCategoryId;
+            return (
+              <button
+                aria-checked={isSelected}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${
+                  isSelected ? "bg-teal-50 font-semibold text-teal-900" : "text-slate-700 hover:bg-slate-50"
+                }`}
+                key={category._id}
+                onClick={() => {
+                  form.setValue("categoryId", category._id, { shouldDirty: true, shouldValidate: true });
+                  closeMenu(true);
+                }}
+                role="menuitemradio"
+                type="button"
+              >
+                <span
+                  aria-hidden="true"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-xs font-bold text-white"
+                  style={{ backgroundColor: category.color }}
+                >
+                  {category.name.trim().charAt(0).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{category.name}</span>
+                {isSelected && <span aria-hidden="true" className="text-teal-700">✓</span>}
+              </button>
+            );
+          }) : (
+            <p className="px-3 py-2.5 text-sm text-slate-500">No categories available</p>
+          )}
+        </div>
+      )}
+      {error && <span className="mt-1 block text-xs text-rose-700">{error}</span>}
+    </div>
+  );
 }
 
 function emptyValues() {
@@ -242,22 +500,17 @@ function BudgetsPage() {
         >
           {categoriesQuery.isError && <Notice>{categoriesQuery.error.message}</Notice>}
           <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
-            <label className="block text-sm font-medium text-slate-700">
-              Budget scope
-              <select className={inputClass} {...form.register("scope")}>
-                <option value="overall">Overall expenses</option>
-                <option value="category">One category</option>
-              </select>
-            </label>
+            <BudgetScopeDropdown
+              onChange={(value) => form.setValue("scope", value, { shouldDirty: true, shouldValidate: true })}
+              register={form.register}
+              value={scope}
+            />
             {scope === "category" && (
-              <label className="block text-sm font-medium text-slate-700">
-                Expense category
-                <select className={inputClass} {...form.register("categoryId")}>
-                  <option value="">Select a category</option>
-                  {expenses.map((category) => <option key={category._id} value={category._id}>{category.name}</option>)}
-                </select>
-                {fieldError.categoryId && <span className="mt-1 block text-xs text-rose-700">{fieldError.categoryId.message}</span>}
-              </label>
+              <BudgetCategoryDropdown
+                categories={expenses}
+                error={fieldError.categoryId?.message}
+                form={form}
+              />
             )}
             <div className="grid grid-cols-[1fr_100px] gap-3">
               <label className="block text-sm font-medium text-slate-700">

@@ -559,6 +559,61 @@ textarea:focus-visible {
   box-shadow: 0 0 0 4px rgba(21, 157, 158, 0.12) !important;
 }
 
+.budget-scope-trigger {
+  min-height: 56px;
+  border-color: #dce8e9;
+  box-shadow: 0 1px 2px rgba(39, 73, 81, 0.035);
+}
+
+.budget-scope-trigger:hover {
+  border-color: #9dd5d3;
+  background-color: rgba(235, 248, 247, 0.68);
+}
+
+.budget-scope-menu {
+  animation: budget-scope-enter 120ms ease-out;
+}
+
+.budget-scope-menu [role="menuitemradio"] {
+  min-height: 57px;
+}
+
+.budget-scope-menu [role="menuitemradio"]:focus-visible {
+  outline: 2px solid rgba(21, 157, 158, 0.5);
+  outline-offset: -2px;
+}
+
+.budget-scope-icon {
+  display: grid;
+  width: 35px;
+  height: 35px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #dcefee;
+  border-radius: 11px;
+  background: #edf8f7;
+  color: #128d8e;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.budget-scope-icon.is-selected {
+  border-color: #c9e8e5;
+  background: #dff3f0;
+}
+
+@keyframes budget-scope-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .ui-button {
   border-radius: 10px !important;
   background: var(--primary) !important;

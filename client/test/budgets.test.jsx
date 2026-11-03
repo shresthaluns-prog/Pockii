@@ -67,7 +67,8 @@ describe("category budget allocations", () => {
 
     await user.click(await screen.findByRole("button", { name: /Create budget/ }));
     const dialog = screen.getByRole("dialog");
-    await user.selectOptions(within(dialog).getByLabelText("Budget scope"), "category");
+    await user.click(within(dialog).getByRole("button", { name: /Budget scope Overall expenses/ }));
+    await user.click(within(dialog).getByRole("menuitemradio", { name: /^One category/ }));
 
     expect(await within(dialog).findByText(/Create an overall budget for this period/)).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Add budget" })).toBeDisabled();
@@ -96,8 +97,10 @@ describe("category budget allocations", () => {
     const userReady = await screen.findByRole("button", { name: /Create budget/ });
     await user.click(userReady);
     const dialog = screen.getByRole("dialog");
-    await user.selectOptions(within(dialog).getByLabelText("Budget scope"), "category");
-    await user.selectOptions(within(dialog).getByLabelText("Expense category"), "category-home");
+    await user.click(within(dialog).getByRole("button", { name: /Budget scope Overall expenses/ }));
+    await user.click(within(dialog).getByRole("menuitemradio", { name: /^One category/ }));
+    await user.click(within(dialog).getByRole("button", { name: /Expense category Select category/ }));
+    await user.click(within(dialog).getByRole("menuitemradio", { name: "Home" }));
     expect(await within(dialog).findByRole("status")).toHaveTextContent(/Available for category budgets:.*29,000\.00/);
 
     const amountInput = within(dialog).getByLabelText("Limit");
@@ -145,8 +148,10 @@ describe("category budget allocations", () => {
 
     await user.click(await screen.findByRole("button", { name: /Create budget/ }));
     const dialog = screen.getByRole("dialog");
-    await user.selectOptions(within(dialog).getByLabelText("Budget scope"), "category");
-    await user.selectOptions(within(dialog).getByLabelText("Expense category"), "category-home");
+    await user.click(within(dialog).getByRole("button", { name: /Budget scope Overall expenses/ }));
+    await user.click(within(dialog).getByRole("menuitemradio", { name: /^One category/ }));
+    await user.click(within(dialog).getByRole("button", { name: /Expense category Select category/ }));
+    await user.click(within(dialog).getByRole("menuitemradio", { name: "Home" }));
     expect(await within(dialog).findByRole("status")).toHaveTextContent(/Available for category budgets:.*19,000\.00/);
 
     const amountInput = within(dialog).getByLabelText("Limit");
