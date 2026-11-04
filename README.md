@@ -145,10 +145,12 @@ Transaction types must match an active category owned by the authenticated user.
 - `GET /api/budgets` — optional `periodType`, `scope`, `categoryId`, `page`, and `limit`.
 - `POST /api/budgets` — `{ "amountMinor", "periodType", "startDate", "categoryId"?, "currency"?, "endDate"? }`.
 - `GET /api/budgets/:id`
-- `PATCH /api/budgets/:id`
+- `PATCH /api/budgets/:id` — partially update `amountMinor`, `currency`, `categoryId`, `periodType`, and/or period dates; returns the updated budget with recalculated spending and remaining amount.
 - `DELETE /api/budgets/:id`
 
 `periodType` is `weekly`, `monthly`, or `custom`. Custom dates are UTC date-only values in `YYYY-MM-DD`; the start is inclusive and the end is exclusive. Weekly/monthly periods are normalized to UTC. Spending is aggregated from the owner’s expense transactions, not stored as a mutable running total.
+
+Budget updates validate the resulting budget and preserve allocation rules: category budgets must fit within the matching overall budget’s unspent allocation, and an overall budget cannot be reduced below its existing category allocations plus spending. When changing a custom period, provide both `startDate` and `endDate`; `endDate` is not accepted for weekly or monthly periods.
 
 ### Reports and analytics
 
