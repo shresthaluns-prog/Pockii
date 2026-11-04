@@ -18,6 +18,7 @@ import { listAllCategories } from "../features/categories/categoriesApi.js";
 import { listTransactions } from "../features/expenses/transactionsApi.js";
 import { fetchReport } from "../features/reports/reportsApi.js";
 import { loadPreferences, subscribeToPreferences } from "../features/settings/preferences.js";
+import SavingsBalanceCard from "../features/savings/SavingsBalanceCard.jsx";
 import { amountToMinor, formatMoney } from "../utils/money.js";
 import DashboardBudgetAlerts from "./DashboardBudgetAlerts.jsx";
 import {
@@ -53,7 +54,7 @@ function quickFormDefaults(currency, timezone) {
   };
 }
 
-function DashboardPage() {
+function DashboardPage({ userId }) {
   const queryClient = useQueryClient();
   const [preferences, setPreferences] = useState(loadPreferences);
   const appliedRange = useMemo(
@@ -172,6 +173,7 @@ function DashboardPage() {
 
       {reportQuery.isError && <Notice>{reportQuery.error.message}</Notice>}
       <DashboardBudgetAlerts categories={categoriesQuery.data ?? []} />
+      {userId && <SavingsBalanceCard currency={selectedCurrency} userId={userId} />}
       {reportQuery.isPending ? (
         <Panel><LoadingState label="Loading dashboard analytics…" /></Panel>
       ) : reportQuery.isSuccess ? (

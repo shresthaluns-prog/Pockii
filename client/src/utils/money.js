@@ -9,7 +9,7 @@ export function currencyFractionDigits(currency) {
   }
 }
 
-export function amountToMinor(amount, currency) {
+export function amountToMinor(amount, currency, { allowZero = false } = {}) {
   const digits = currencyFractionDigits(currency);
   const value = String(amount).trim();
   const match = value.match(/^(\d+)(?:\.(\d+))?$/);
@@ -24,8 +24,12 @@ export function amountToMinor(amount, currency) {
   const factor = 10n ** BigInt(digits);
   const fraction = (match[2] ?? "").padEnd(digits, "0");
   const minor = BigInt(match[1]) * factor + BigInt(fraction || "0");
-  if (minor <= 0n || minor > BigInt(Number.MAX_SAFE_INTEGER)) {
-    throw new Error("Enter an amount greater than zero within the supported range.");
+  if (minor < 0n || (!allowZero && minor === 0n) || minor > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(
+      allowZero
+        ? "Enter a non-negative amount within the supported range."
+        : "Enter an amount greater than zero within the supported range.",
+    );
   }
   return Number(minor);
 }

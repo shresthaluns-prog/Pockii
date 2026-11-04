@@ -162,7 +162,7 @@ function App() {
               />
             )}
             <Routes>
-              <Route element={<DashboardPage />} path="/" />
+              <Route element={<DashboardPage userId={user.id} />} path="/" />
               <Route element={<TransactionsPage />} path="/transactions" />
               <Route element={<BudgetsPage />} path="/budgets" />
               <Route

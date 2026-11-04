@@ -10,6 +10,7 @@ import categoryRouter from "./features/categories/category.routes.js";
 import transactionRouter from "./features/expenses/transaction.routes.js";
 import budgetRouter from "./features/budgets/budget.routes.js";
 import reportRouter from "./features/reports/report.routes.js";
+import savingsRouter from "./features/savings/savings.routes.js";
 import healthRouter from "./routes/health.routes.js";
 
 const app = express();
@@ -32,6 +33,7 @@ app.use("/api/categories", categoryRouter);
 app.use("/api/transactions", transactionRouter);
 app.use("/api/budgets", budgetRouter);
 app.use("/api/reports", reportRouter);
+app.use("/api/savings", savingsRouter);
 app.use(notFound);
 app.use(errorHandler);
 

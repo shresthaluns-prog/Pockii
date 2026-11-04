@@ -14,7 +14,7 @@ The backend tests use `mongodb-memory-server` and a temporary, isolated database
 
 - `client/` — React, Vite, Tailwind CSS, React Router, TanStack Query, React Hook Form, Zod, and Recharts
 - `server/` — Express ES modules, Mongoose models, validation, authentication, and feature routes
-- `server/src/features/` — auth, categories, transactions, budgets, and reports
+- `server/src/features/` — auth, categories, transactions, budgets, savings, and reports
 
 ## Local setup
 
@@ -94,7 +94,7 @@ npm --prefix client run preview
 
 `server npm test` starts a temporary MongoDB instance, sets `NODE_ENV=test` and a dedicated `expense_tracker_test` database for the test process, runs all backend tests serially, and stops the temporary instance. It does not use the development database configured in `server/.env`.
 
-The backend suite includes Supertest API integration tests and existing model/service tests. The client suite uses Vitest, jsdom, and React Testing Library. Tests cover authentication and refresh rotation, logout and session revocation, rate limiting, CORS and cookie attributes, CRUD, invalid input/IDs, pagination and date boundaries, budget calculations, analytics, cross-user access, frontend validation, protected routes, and memory-only token handling.
+The backend suite includes Supertest API integration tests and existing model/service tests. The client suite uses Vitest, jsdom, and React Testing Library. Tests cover authentication and refresh rotation, logout and session revocation, rate limiting, CORS and cookie attributes, CRUD, invalid input/IDs, pagination and date boundaries, budget calculations, savings-balance validation and account ownership, analytics, cross-user access, frontend validation, protected routes, and memory-only token handling.
 
 New users receive Food, Rent, Entertainment, Education, and Miscellaneous as expense categories. Existing users receive any missing defaults at login or refresh; to seed every account in the configured database immediately, run `npm --prefix server run seed:categories`. The seed operation is idempotent and preserves existing categories and income categories.
 
@@ -158,6 +158,13 @@ Budget updates validate the resulting budget and preserve allocation rules: cate
 
 Date ranges are inclusive in the requested timezone, limited to 366 days. The result includes period, summary, totals, monthly series, trends, category totals, payment totals, and budget progress. Empty months are represented in chart series; currencies remain separate.
 
+### Savings balance
+
+- `GET /api/savings` — returns the signed-in user's saved balance, or `null` if none has been saved.
+- `PUT /api/savings` — saves `{ "amountMinor", "currency" }` for the signed-in user. `amountMinor` is a non-negative safe integer in that currency's minor unit; currency must be a three-letter ISO 4217 code.
+
+The Overview page includes a manually maintained savings-balance card. Each account has one saved balance in one currency; changing the currency when saving replaces the previous balance, and values are never converted or included in income/expense totals.
+
 ### Dashboard budget alerts
 
 The dashboard displays alerts for overall and category budgets that are currently active and at least 80% used. Alerts are ordered from highest usage to lowest, show the spent and limit amounts with a progress bar, and distinguish budgets nearing their limit from those that are over budget. Budgets below 80% or outside their active period do not show an alert. If budget data cannot be loaded, the dashboard displays an availability notice.
@@ -174,6 +181,6 @@ The dashboard displays alerts for overall and category budgets that are currentl
 
 ## Test report and known limits
 
-The current verified run passed 32 backend tests, 11 client tests, backend syntax checks, and the Vite production build. The automated suite exercises the application against an ephemeral MongoDB database and tests the UI in jsdom. Production `Secure` cookie behavior is verified through the production cookie configuration in a separate Node process; deployment behind a real TLS proxy, browser-based cross-tab refresh races, and end-to-end accessibility/visual behavior are not exercised by these automated tests.
+The latest validation passed all 33 client tests, backend syntax checks, and the Vite production build. The backend run passed 35 of 36 tests, including the savings API and model tests; `transactions.integration.test.js` timed out connecting to the temporary MongoDB after the reports integration test. The automated suite exercises the application against an ephemeral MongoDB database and tests the UI in jsdom. Production `Secure` cookie behavior is verified through the production cookie configuration in a separate Node process; deployment behind a real TLS proxy, browser-based cross-tab refresh races, and end-to-end accessibility/visual behavior are not exercised by these automated tests.
 
 The Express rate limiter uses its default in-memory store; deployments with multiple API instances should configure a shared store so the per-IP limit applies across instances. No production deployment manifest or CI workflow is included.

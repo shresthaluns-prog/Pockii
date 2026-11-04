@@ -11,6 +11,7 @@ import Budget from "../src/features/budgets/budget.model.js";
 import Category from "../src/features/categories/category.model.js";
 import { hashRefreshToken } from "../src/features/auth/auth.service.js";
 import RefreshSession from "../src/features/auth/refresh-session.model.js";
+import SavingsBalance from "../src/features/savings/savings-balance.model.js";
 import Transaction from "../src/features/expenses/transaction.model.js";
 import User from "../src/features/auth/user.model.js";
 
@@ -78,6 +79,7 @@ before(async () => {
     Category.init(),
     Transaction.init(),
     Budget.init(),
+    SavingsBalance.init(),
   ]);
 });
 
@@ -91,6 +93,7 @@ afterEach(async () => {
       RefreshSession.deleteMany({ userId: { $in: userIds } }),
       Transaction.deleteMany({ userId: { $in: userIds } }),
       Budget.deleteMany({ userId: { $in: userIds } }),
+      SavingsBalance.deleteMany({ userId: { $in: userIds } }),
       Category.deleteMany({ userId: { $in: userIds } }),
       User.deleteMany({ _id: { $in: userIds } }),
     ]);
@@ -559,4 +562,40 @@ test("auth endpoints enforce the configured per-IP rate limit", async () => {
   }
   assert.equal(finalResponse.status, 429);
   assert.equal(finalResponse.body.message, "Too many authentication requests. Try again later.");
+});
+
+test("savings balances are persisted per user and validated", async () => {
+  await authLimiter.resetKey("127.0.0.1");
+  const owner = await registerAgent("Savings Owner");
+  const other = await registerAgent("Other Savings Owner");
+
+  const unauthenticated = await request(app).get("/api/savings");
+  assert.equal(unauthenticated.status, 401);
+
+  const initial = await owner.agent.get("/api/savings");
+  assert.equal(initial.status, 200);
+  assert.equal(initial.body.data, null);
+
+  const saved = await owner.agent
+    .put("/api/savings")
+    .send({ amountMinor: 12345, currency: "usd" });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.body.data, { amountMinor: 12345, currency: "USD" });
+  assert.deepEqual((await owner.agent.get("/api/savings")).body.data, saved.body.data);
+  assert.equal((await other.agent.get("/api/savings")).body.data, null);
+
+  const zero = await owner.agent
+    .put("/api/savings")
+    .send({ amountMinor: 0, currency: "NPR" });
+  assert.equal(zero.status, 200);
+  assert.deepEqual(zero.body.data, { amountMinor: 0, currency: "NPR" });
+
+  const invalid = await owner.agent
+    .put("/api/savings")
+    .send({ amountMinor: -1, currency: "USD" });
+  assert.equal(invalid.status, 400);
+  const unknownField = await owner.agent
+    .put("/api/savings")
+    .send({ amountMinor: 1, currency: "USD", userId: "65f000000000000000000001" });
+  assert.equal(unknownField.status, 400);
 });

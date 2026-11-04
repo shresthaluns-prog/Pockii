@@ -6,6 +6,7 @@ import Category from "../src/features/categories/category.model.js";
 import RefreshSession from "../src/features/auth/refresh-session.model.js";
 import User from "../src/features/auth/user.model.js";
 import Transaction from "../src/features/expenses/transaction.model.js";
+import SavingsBalance from "../src/features/savings/savings-balance.model.js";
 
 const userId = new mongoose.Types.ObjectId();
 const categoryId = new mongoose.Types.ObjectId();
@@ -173,8 +174,21 @@ test("Budget supports overall and category limits with a valid date interval", a
   );
 });
 
+test("SavingsBalance stores a non-negative minor-unit amount and one currency per user", async () => {
+  const balance = new SavingsBalance({ userId, amountMinor: 0, currency: "usd" });
+  await balance.validate();
+  assert.equal(balance.currency, "USD");
+  assert.ok(
+    SavingsBalance.schema.indexes().some(
+      ([keys, options]) => keys.userId === 1 && options.unique,
+    ),
+  );
+  await assertInvalid(new SavingsBalance({ userId, amountMinor: -1, currency: "USD" }), "amountMinor");
+  await assertInvalid(new SavingsBalance({ userId, amountMinor: 1, currency: "US" }), "currency");
+});
+
 test("all financial models require a user ObjectId reference and timestamps", () => {
-  for (const Model of [RefreshSession, Category, Transaction, Budget]) {
+  for (const Model of [RefreshSession, Category, Transaction, Budget, SavingsBalance]) {
     assert.equal(Model.schema.path("userId").instance, "ObjectId");
     assert.equal(Model.schema.path("userId").options.ref, "User");
     assert.equal(Model.schema.options.timestamps, true);

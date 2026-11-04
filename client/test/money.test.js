@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compactMoney, formatMoney } from "../src/utils/money.js";
+import { amountToMinor, compactMoney, formatMoney } from "../src/utils/money.js";
 import { getDefaultPreferences } from "../src/features/settings/preferences.js";
 
 describe("shared Rs. currency formatting", () => {
@@ -16,5 +16,10 @@ describe("shared Rs. currency formatting", () => {
   it("formats chart-axis values with Rs. and defaults preferences to NPR", () => {
     expect(compactMoney(125000000, "NPR")).toBe("Rs. 1.3m");
     expect(getDefaultPreferences().currency).toBe("NPR");
+  });
+
+  it("allows zero only when parsing a savings balance", () => {
+    expect(amountToMinor("0", "USD", { allowZero: true })).toBe(0);
+    expect(() => amountToMinor("0", "USD")).toThrow(/greater than zero/);
   });
 });
