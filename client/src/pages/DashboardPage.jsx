@@ -173,7 +173,6 @@ function DashboardPage({ userId }) {
 
       {reportQuery.isError && <Notice>{reportQuery.error.message}</Notice>}
       <DashboardBudgetAlerts categories={categoriesQuery.data ?? []} />
-      {userId && <SavingsBalanceCard currency={selectedCurrency} userId={userId} />}
       {reportQuery.isPending ? (
         <Panel><LoadingState label="Loading dashboard analytics…" /></Panel>
       ) : reportQuery.isSuccess ? (
@@ -182,6 +181,8 @@ function DashboardPage({ userId }) {
             <SummaryCard className="summary-card--tall" label="Income" value={formatMoney(summary.incomeMinor, selectedCurrency)} detail={`${incomeCount} income transactions`} tone="emerald" />
             <SummaryCard className="summary-card--tall" label="Expenses" value={formatMoney(summary.expensesMinor, selectedCurrency)} detail={`${expenseCount} expense transactions`} tone="red" />
           </section>
+
+          {userId && <SavingsBalanceCard currency={selectedCurrency} userId={userId} />}
 
           <section aria-label="Cash flow and recent transactions" className="dashboard-analytics-grid grid gap-4 xl:grid-cols-2">
             <Panel className="dashboard-chart-panel" title="Cash flow" description={`Monthly income and expenses · ${selectedCurrency}`}>
