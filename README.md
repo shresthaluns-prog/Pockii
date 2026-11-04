@@ -158,6 +158,10 @@ Budget updates validate the resulting budget and preserve allocation rules: cate
 
 Date ranges are inclusive in the requested timezone, limited to 366 days. The result includes period, summary, totals, monthly series, trends, category totals, payment totals, and budget progress. Empty months are represented in chart series; currencies remain separate.
 
+### Dashboard budget alerts
+
+The dashboard displays alerts for overall and category budgets that are currently active and at least 80% used. Alerts are ordered from highest usage to lowest, show the spent and limit amounts with a progress bar, and distinguish budgets nearing their limit from those that are over budget. Budgets below 80% or outside their active period do not show an alert. If budget data cannot be loaded, the dashboard displays an availability notice.
+
 ## Troubleshooting
 
 - **MongoDB connection fails:** verify MongoDB is running and `MONGODB_URI` points to the right host, port, and database. Check `/api/health`.
