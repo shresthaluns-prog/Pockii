@@ -68,7 +68,7 @@ dependencies:
 ```bash
 sudo mkdir -p /var/www/pockii
 sudo chown ubuntu:ubuntu /var/www/pockii
-git clone --branch master https://github.com/shresthaluns-prog/Expense-Tracker.git /var/www/pockii
+git clone --branch master https://github.com/shresthaluns-prog/Pockii.git /var/www/pockii
 cd /var/www/pockii/server
 npm ci --omit=dev
 ```
@@ -105,6 +105,12 @@ On your Windows development computer, from the repository root:
 npm --prefix client ci
 npm --prefix client run build
 scp -i "$HOME\.ssh\pockii.pem" -r .\client\dist ubuntu@<EC2_PUBLIC_IP>:/var/www/pockii/client/
+```
+
+On EC2, make the copied static files readable by Nginx:
+
+```bash
+sudo chmod -R a+rX /var/www/pockii/client/dist
 ```
 
 ## 7. Start the API with PM2
@@ -148,8 +154,9 @@ Enter an email address when Certbot asks. Once it finishes, open
 
 ## 9. Update the deployment
 
-Build the client again on your computer and copy the new `client/dist` folder
-to EC2 as in step 6. On EC2, update the server and restart it:
+Without GitHub Actions, build the client again on your computer and copy the new
+`client/dist` folder to EC2 as in step 6. On EC2, update the server and restart
+it:
 
 ```bash
 cd /var/www/pockii
@@ -162,11 +169,61 @@ pm2 startOrReload ecosystem.config.cjs --env production --update-env
 Check `pm2 status`, `pm2 logs pockii-api`, and the API health URL if the site
 does not work.
 
+## 10. Enable GitHub Actions deployment
+
+`.github/workflows/deploy.yml` runs client tests, builds the client, checks the
+server, then deploys to EC2 on pushes to `master`. It opens SSH only to the
+GitHub runner's current IPv4 address for the duration of a deployment, then
+attempts to remove that rule. An abrupt runner cancellation can leave the
+temporary rule behind; if that happens, remove only the stale runner-IP SSH
+rule from the EC2 security group. The workflow requires permission to authorize
+and revoke SSH ingress rules on the EC2 security group. You can also start it
+manually from the repository's **Actions** tab.
+
+In the Pockii GitHub repository, open **Settings → Secrets and variables →
+Actions**. Add these repository secrets:
+
+| Secret | Value |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | Current AWS Academy access key |
+| `AWS_SECRET_ACCESS_KEY` | Matching AWS Academy secret key |
+| `AWS_SESSION_TOKEN` | AWS Academy session token, when provided |
+| `EC2_SSH_PRIVATE_KEY` | Full contents of the EC2 `.pem` file |
+| `EC2_KNOWN_HOSTS` | Verified SSH host-key line for `pockii.duckdns.org` |
+
+Add these repository variables:
+
+| Variable | Value |
+|---|---|
+| `AWS_REGION` | Region containing the EC2 instance |
+| `EC2_HOST` | `pockii.duckdns.org` |
+| `EC2_SECURITY_GROUP_ID` | Security group ID attached to EC2 (`sg-...`) |
+
+To prepare `EC2_KNOWN_HOSTS`, run this in the trusted Ubuntu EC2 SSH session.
+It prints the single known-hosts line for the deployment hostname:
+
+```bash
+sudo awk '{print "pockii.duckdns.org " $1 " " $2}' /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+Copy that complete line into the `EC2_KNOWN_HOSTS` secret. To display the
+public-key fingerprint for reference, run:
+
+```bash
+sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+This line contains only the server's public host key. Never put the private key
+or AWS credentials in the repository.
+
+AWS Academy credentials expire. Update the AWS secrets when the lab gives you
+new credentials. If the lab denies the security-group ingress API calls, do
+not open SSH to everyone; continue with the manual deployment steps instead.
+
 ## Learner Lab reminders
 
-- AWS credentials used by automation expire; never store them in the source
-  tree. This manual deployment guide does not require adding AWS credentials to
-  GitHub.
+- AWS credentials used by automation expire; store them only as GitHub Actions
+  secrets, never in the source tree.
 - If an EC2 public IP changes, update DuckDNS and any database IP allowlist.
 - Keep backups of production data outside the EC2 instance.
 - The Nginx proxy forwards client IP headers. The Express app is configured to

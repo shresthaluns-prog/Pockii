@@ -1,0 +1,123 @@
+name: Build and deploy Pockii
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "client/**"
+      - "server/**"
+      - "infra/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pockii-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EC2_HOST: ${{ vars.EC2_HOST }}
+      EC2_SECURITY_GROUP_ID: ${{ vars.EC2_SECURITY_GROUP_ID }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Test and build client
+        run: |
+          npm --prefix client ci
+          npm --prefix client test
+          npm --prefix client run build
+
+      - name: Check server
+        run: |
+          npm --prefix server ci
+          npm --prefix server run check
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy to EC2
+        env:
+          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          : "${AWS_REGION:?Set the AWS_REGION repository variable}"
+          : "${EC2_HOST:?Set the EC2_HOST repository variable}"
+          : "${EC2_SECURITY_GROUP_ID:?Set the EC2_SECURITY_GROUP_ID repository variable}"
+          : "${EC2_SSH_PRIVATE_KEY:?Set the EC2_SSH_PRIVATE_KEY repository secret}"
+          : "${EC2_KNOWN_HOSTS:?Set the EC2_KNOWN_HOSTS repository secret}"
+
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$EC2_SSH_PRIVATE_KEY" > "$HOME/.ssh/pockii.pem"
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/pockii.pem" "$HOME/.ssh/known_hosts"
+
+          RUNNER_CIDR="$(curl -4fsS https://checkip.amazonaws.com | tr -d '\r\n')/32"
+          aws ec2 authorize-security-group-ingress \
+            --group-id "$EC2_SECURITY_GROUP_ID" \
+            --protocol tcp \
+            --port 22 \
+            --cidr "$RUNNER_CIDR"
+
+          cleanup() {
+            rm -f "$HOME/.ssh/pockii.pem" "$RUNNER_TEMP/pockii-client.tar.gz"
+            if ! aws ec2 revoke-security-group-ingress \
+              --group-id "$EC2_SECURITY_GROUP_ID" \
+              --protocol tcp \
+              --port 22 \
+              --cidr "$RUNNER_CIDR"; then
+              echo "::error::Could not remove the temporary SSH rule for $RUNNER_CIDR"
+              exit 1
+            fi
+          }
+          trap cleanup EXIT
+
+          tar -czf "$RUNNER_TEMP/pockii-client.tar.gz" -C client/dist .
+          scp -i "$HOME/.ssh/pockii.pem" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$RUNNER_TEMP/pockii-client.tar.gz" \
+            "ubuntu@$EC2_HOST:/tmp/pockii-client.tar.gz"
+
+          ssh -i "$HOME/.ssh/pockii.pem" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "ubuntu@$EC2_HOST" \
+            "set -eu
+            cd /var/www/pockii
+            git pull --ff-only origin master
+            cd server
+            npm ci --omit=dev
+            mkdir -p /var/www/pockii/client/dist
+            tar -xzf /tmp/pockii-client.tar.gz -C /var/www/pockii/client/dist
+            rm -f /tmp/pockii-client.tar.gz
+            chmod -R a+rX /var/www/pockii/client/dist
+            pm2 startOrReload ecosystem.config.cjs --env production --update-env"
+
+          HEALTH="$(curl --fail --silent --show-error --retry 5 --retry-delay 3 https://pockii.duckdns.org/api/health)"
+          echo "$HEALTH"
+          echo "$HEALTH" | grep -q '"database":"connected"'

@@ -5,6 +5,8 @@ coverage/
 .vite/
 .env
 .env.*
+!client/.env.example
+!server/.env.example
 
 # Local credentials and private keys
 **/secrets/
