@@ -28,7 +28,7 @@ In the AWS Academy Learner Lab console:
 3. Create and download an EC2 key pair. Keep the private key outside this
    repository.
 4. Create a security group with inbound rules:
-   - SSH (TCP 22) from **your current public IP only** (`your-ip/32`).
+   -SSH (TCP 22) from **your current public IP only** (`your-ip/32`). 
    - HTTP (TCP 80) from `0.0.0.0/0`.
    - HTTPS (TCP 443) from `0.0.0.0/0`.
    - Do not expose TCP 5000 (API) or 27017 (MongoDB).
