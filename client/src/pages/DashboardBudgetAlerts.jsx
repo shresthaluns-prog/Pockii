@@ -52,12 +52,16 @@ function DashboardBudgetAlerts({ categories = [] }) {
         {alerts.map((budget) => {
           const percentageUsed = Number(budget.percentageUsed);
           const overBudget = percentageUsed > 100 || budget.status === "over_budget";
+          const reachedLimit =
+            !overBudget && Number(budget.spentMinor) >= Number(budget.amountMinor);
           const categoryId = categoryIdOf(budget);
           const category = categories.find((item) => item._id === categoryId);
           const budgetName = categoryId ? `${category?.name ?? "Category"} budget` : "Overall budget";
           const message = overBudget
             ? `You've used ${percentageUsed.toFixed(0)}% of your ${budgetName}. You've gone over the limit.`
-            : `Careful — you've used ${percentageUsed.toFixed(0)}% of your ${budgetName}. You're getting close to your limit.`;
+            : reachedLimit
+              ? `You've used ${percentageUsed.toFixed(0)}% of your ${budgetName}. You've reached your limit.`
+              : `Careful — you've used ${percentageUsed.toFixed(0)}% of your ${budgetName}. You're getting close to your limit.`;
 
           return (
             <li

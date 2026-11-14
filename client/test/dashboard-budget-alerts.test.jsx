@@ -60,6 +60,16 @@ describe("overview budget alerts", () => {
         ...dates,
       },
       {
+        _id: "exact-limit",
+        categoryId: null,
+        amountMinor: 10000,
+        spentMinor: 10000,
+        percentageUsed: 100,
+        status: "warning",
+        currency: "NPR",
+        ...dates,
+      },
+      {
         _id: "safe",
         categoryId: null,
         amountMinor: 50000,
@@ -74,7 +84,9 @@ describe("overview budget alerts", () => {
     expect(await screen.findByText(/you've used 105% of your Food budget/i)).toBeInTheDocument();
     expect(screen.getByText(/Careful — you've used 84% of your Overall budget/i)).toBeInTheDocument();
     expect(screen.getByText(/You've gone over the limit/)).toBeInTheDocument();
-    expect(screen.getAllByRole("progressbar")).toHaveLength(2);
+    expect(screen.getByText(/You've used 100% of your Overall budget\. You've reached your limit\./)).toBeInTheDocument();
+    expect(screen.queryByText(/100% of your Overall budget.*getting close/i)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("progressbar")).toHaveLength(3);
     expect(screen.queryByText(/60%/)).not.toBeInTheDocument();
   });
 
