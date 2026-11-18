@@ -1,231 +1,121 @@
 # Hosting Pockii on AWS EC2
 
-This guide deploys the React client and Express API to one Ubuntu EC2 instance.
-Nginx serves the client and proxies `/api` to the API. MongoDB remains MongoDB;
-the production database must be reachable from EC2 (for example, a managed
-MongoDB deployment). The local `127.0.0.1` database on a development computer
-is not reachable from EC2.
+This deployment uses CloudFormation to create an Ubuntu EC2 instance, a stable
+Elastic IP, and its SSH key, plus Nginx, Node.js 22, and PM2. CloudFront
+provides the stable HTTPS URL and proxies requests to Nginx on EC2. GitHub
+Actions tests and builds the client, uploads the build artifact, deploys the
+infrastructure, and updates the application. MongoDB remains a separate,
+reachable production database.
 
-The hostname for this setup is `pockii.duckdns.org`.
+The EC2 instance uses the default VPC and a public subnet. Ensure the default
+VPC and its internet gateway are available in the AWS region enabled for your
+Learner Lab.
 
-## 1. Create a reachable MongoDB database
+## Configure GitHub Actions
 
-Create a production database and database user with your MongoDB hosting
-provider. Copy the connection string for the application. Do not commit the
-connection string or paste it into GitHub files.
-
-If you need to keep data from your local database, export it and import it into
-the production database before switching the application over. If you do not
-need the local data, the production database can start empty.
-
-## 2. Launch an EC2 instance
-
-In the AWS Academy Learner Lab console:
-
-1. Start the lab and use a region enabled for your lab.
-2. Launch Ubuntu Server 24.04 LTS, x86-64. Choose an instance size allowed by
-   your lab.
-3. Create and download an EC2 key pair. Keep the private key outside this
-   repository.
-4. Create a security group with inbound rules:
-   -SSH (TCP 22) from **your current public IP only** (`your-ip/32`). 
-   - HTTP (TCP 80) from `0.0.0.0/0`.
-   - HTTPS (TCP 443) from `0.0.0.0/0`.
-   - Do not expose TCP 5000 (API) or 27017 (MongoDB).
-5. Launch the instance and note its public IPv4 address.
-
-Learner Lab resources and IP addresses may change or become unavailable when
-the lab ends. The application will be offline while the instance is stopped.
-
-## 3. Point DuckDNS to EC2
-
-In DuckDNS, set the IPv4 address for `pockii.duckdns.org` to the EC2 public IPv4
-address. Do not put the DuckDNS token in this repository. If the EC2 public IP
-changes after a restart or replacement, update the DuckDNS address.
-
-## 4. Install the server software
-
-From PowerShell on Windows, connect to the instance (adjust the key path):
-
-```powershell
-ssh -i "$HOME\.ssh\pockii.pem" ubuntu@<EC2_PUBLIC_IP>
-```
-
-On the Ubuntu instance:
-
-```bash
-sudo apt update
-sudo apt install -y nginx git curl ca-certificates certbot python3-certbot-nginx
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs
-sudo npm install --global pm2
-node --version
-```
-
-Use Node.js 22.12 or later. Then clone the project and install server
-dependencies:
-
-```bash
-sudo mkdir -p /var/www/pockii
-sudo chown ubuntu:ubuntu /var/www/pockii
-git clone --branch master https://github.com/shresthaluns-prog/Pockii.git /var/www/pockii
-cd /var/www/pockii/server
-npm ci --omit=dev
-```
-
-## 5. Configure the production environment
-
-Create `/var/www/pockii/server/.env` on EC2 and set:
-
-```dotenv
-NODE_ENV=production
-PORT=5000
-MONGODB_URI=<production MongoDB connection string>
-ACCESS_TOKEN_SECRET=<random secret of at least 32 characters>
-CSRF_SECRET=<different random secret of at least 32 characters>
-CLIENT_ORIGINS=https://pockii.duckdns.org
-REFRESH_COOKIE_SAME_SITE=lax
-```
-
-Generate both secrets separately on the server with `openssl rand -base64 48`.
-Keep the values private. Restrict the file permissions:
-
-```bash
-chmod 600 /var/www/pockii/server/.env
-```
-
-Do not set server secrets as `VITE_*` variables. The client already defaults to
-the same-origin `/api` path.
-
-## 6. Build and copy the client
-
-On your Windows development computer, from the repository root:
-
-```powershell
-npm --prefix client ci
-npm --prefix client run build
-scp -i "$HOME\.ssh\pockii.pem" -r .\client\dist ubuntu@<EC2_PUBLIC_IP>:/var/www/pockii/client/
-```
-
-On EC2, make the copied static files readable by Nginx:
-
-```bash
-sudo chmod -R a+rX /var/www/pockii/client/dist
-```
-
-## 7. Start the API with PM2
-
-The repository includes `server/ecosystem.config.cjs`. On EC2:
-
-```bash
-cd /var/www/pockii/server
-pm2 start ecosystem.config.cjs --env production
-pm2 startup systemd -u ubuntu --hp /home/ubuntu
-```
-
-Run the `sudo` command printed by `pm2 startup`, then save the process list:
-
-```bash
-pm2 save
-```
-
-## 8. Configure Nginx and HTTPS
-
-On EC2:
-
-```bash
-sudo cp /var/www/pockii/infra/nginx-pockii.conf /etc/nginx/sites-available/pockii
-sudo ln -s /etc/nginx/sites-available/pockii /etc/nginx/sites-enabled/pockii
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-After DuckDNS resolves to the EC2 IP and HTTP is reachable, request a
-certificate:
-
-```bash
-sudo certbot --nginx -d pockii.duckdns.org --redirect
-```
-
-Enter an email address when Certbot asks. Once it finishes, open
-`https://pockii.duckdns.org` and check
-`https://pockii.duckdns.org/api/health`.
-
-## 9. Update the deployment
-
-Without GitHub Actions, build the client again on your computer and copy the new
-`client/dist` folder to EC2 as in step 6. On EC2, update the server and restart
-it:
-
-```bash
-cd /var/www/pockii
-git pull origin master
-cd server
-npm ci --omit=dev
-pm2 startOrReload ecosystem.config.cjs --env production --update-env
-```
-
-Check `pm2 status`, `pm2 logs pockii-api`, and the API health URL if the site
-does not work.
-
-## 10. Enable GitHub Actions deployment
-
-`.github/workflows/deploy.yml` runs client tests, builds the client, checks the
-server, then deploys to EC2 on pushes to `master`. It opens SSH only to the
-GitHub runner's current IPv4 address for the duration of a deployment, then
-attempts to remove that rule. An abrupt runner cancellation can leave the
-temporary rule behind; if that happens, remove only the stale runner-IP SSH
-rule from the EC2 security group. The workflow requires permission to authorize
-and revoke SSH ingress rules on the EC2 security group. You can also start it
-manually from the repository's **Actions** tab.
-
-In the Pockii GitHub repository, open **Settings → Secrets and variables →
-Actions**. Add these repository secrets:
+In the repository, open **Settings → Secrets and variables → Actions** and add
+these repository secrets:
 
 | Secret | Value |
 |---|---|
 | `AWS_ACCESS_KEY_ID` | Current AWS Academy access key |
 | `AWS_SECRET_ACCESS_KEY` | Matching AWS Academy secret key |
-| `AWS_SESSION_TOKEN` | AWS Academy session token, when provided |
-| `EC2_SSH_PRIVATE_KEY` | Full contents of the EC2 `.pem` file |
-| `EC2_KNOWN_HOSTS` | Verified SSH host-key line for `pockii.duckdns.org` |
+| `AWS_SESSION_TOKEN` | Current AWS Academy session token |
+| `MONGODB_URI` | Production MongoDB connection string reachable from EC2 |
+| `ACCESS_TOKEN_SECRET` | Random secret of at least 32 characters |
+| `CSRF_SECRET` | Different random secret of at least 32 characters |
 
 Add these repository variables:
 
 | Variable | Value |
 |---|---|
-| `AWS_REGION` | Region containing the EC2 instance |
-| `EC2_HOST` | `pockii.duckdns.org` |
-| `EC2_SECURITY_GROUP_ID` | Security group ID attached to EC2 (`sg-...`) |
+| `AWS_REGION` | AWS region enabled for the Learner Lab |
+| `CFN_STACK_NAME` | CloudFormation stack name, for example `pockii-production` |
 
-To prepare `EC2_KNOWN_HOSTS`, run this in the trusted Ubuntu EC2 SSH session.
-It prints the single known-hosts line for the deployment hostname:
+Keep all secret values single-line. Do not put credentials in the repository or
+in a `VITE_*` variable. The generated EC2 private key is saved by CloudFormation
+in SSM Parameter Store and retrieved by the deployment workflow; do not create
+`EC2_SSH_PRIVATE_KEY` or `EC2_KNOWN_HOSTS` GitHub secrets.
+
+## Deploy
+
+Start the Learner Lab and update the three AWS credential secrets whenever it
+issues new credentials. Push to `main` or `master`, or start the workflow
+manually from **Actions → Build and deploy Pockii → Run workflow**.
+
+The workflow:
+
+1. Tests and builds the client on a GitHub-hosted Ubuntu runner and uploads
+   `client/dist` as an artifact.
+2. Deploys `infra/ec2-instance.yaml`, creating an EC2 `t2.micro`, Elastic IP,
+   key pair, security group, and CloudFront distribution. On later runs it
+   starts a stopped instance and refreshes the CloudFront origin.
+3. Reads `PublicIP`, `InstanceId`, `PublicURL`, and `SSMKeyPath` from the stack.
+   It retrieves the generated SSH key from Parameter Store, waits for EC2 and
+   cloud-init, and copies the client artifact to the instance.
+4. Checks out the pushed commit on EC2, writes `server/.env` from the GitHub
+   secrets, installs production server dependencies, and reloads PM2.
+5. Checks the HTTPS API health endpoint.
+
+After the first successful deployment, open the `PublicURL` stack output. It
+uses the CloudFront default certificate, so no DuckDNS record or Certbot
+certificate is needed. The workflow serves `CLIENT_ORIGINS` from this URL.
+
+### First deployment with MongoDB Atlas
+
+The EC2 Elastic IP stays assigned when the instance stops and starts, allowing
+Atlas to use a single `/32` access-list entry. On the first workflow run, the
+stack creates the IP, but the health check may fail until Atlas allows it:
+
+1. In **CloudFormation → your stack → Outputs**, copy `PublicIP`.
+2. In Atlas, open **Security → Network Access → IP Access List**, add that IP
+   with `/32`, and confirm the change.
+3. Rerun **Build and deploy Pockii** from the Actions tab. The API health check
+   should then report `"database":"connected"`.
+
+Do not use `0.0.0.0/0` to avoid configuring the access list. If the stack is
+deleted and recreated, its Elastic IP changes and the Atlas entry must be
+updated.
+
+## Network and Learner Lab notes
+
+- The security group permanently allows HTTP (TCP 80) and SSH (TCP 22) from
+  `0.0.0.0/0`, as required for this workflow. Do not open API port 5000 or
+  MongoDB port 27017. SSH is exposed to the internet; use key-based
+  authentication only. For a stronger long-term design, replace SSH deployment
+  with Systems Manager Session Manager and restrict inbound SSH.
+- To avoid a manually maintained `EC2_KNOWN_HOSTS` secret, the SCP step trusts
+  the first-seen host key and the SSH action does not receive a pinned host
+  fingerprint. The host identity is therefore not independently verified;
+  use Session Manager or add an independently verified host-key pin for a
+  production deployment.
+- CloudFront adds AWS resources and may incur charges. The Learner Lab must
+  permit CloudFront, Elastic IP allocation/association, EC2 key-pair creation,
+  and Parameter Store access. Elastic IPs may incur charges. If the lab denies
+  these operations, an instructor/admin must enable them; the workflow cannot
+  bypass AWS permissions.
+- Learner Lab credentials expire. Push-triggered deployment cannot authenticate
+  after expiry until you refresh `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+  and `AWS_SESSION_TOKEN`.
+- The Elastic IP and CloudFront URL remain stable when the instance is stopped
+  and restarted. The next workflow run starts the instance and refreshes the
+  CloudFront origin.
+- The repository must be publicly cloneable by EC2 during first-boot setup.
+- Back up production data independently of this stack. Deleting the stack also
+  deletes the EC2 instance, generated key pair, and its SSM key parameter.
+
+## Manual checks
+
+To inspect deployment resources, use the CloudFormation stack outputs and
+check the instance over SSH using the key retrieved from the stack's
+`SSMKeyPath`. Useful instance commands include:
 
 ```bash
-sudo awk '{print "pockii.duckdns.org " $1 " " $2}' /etc/ssh/ssh_host_ed25519_key.pub
+sudo cloud-init status --long
+pm2 status
+pm2 logs pockii-api
+sudo nginx -t
 ```
 
-Copy that complete line into the `EC2_KNOWN_HOSTS` secret. To display the
-public-key fingerprint for reference, run:
-
-```bash
-sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
-```
-
-This line contains only the server's public host key. Never put the private key
-or AWS credentials in the repository.
-
-AWS Academy credentials expire. Update the AWS secrets when the lab gives you
-new credentials. If the lab denies the security-group ingress API calls, do
-not open SSH to everyone; continue with the manual deployment steps instead.
-
-## Learner Lab reminders
-
-- AWS credentials used by automation expire; store them only as GitHub Actions
-  secrets, never in the source tree.
-- If an EC2 public IP changes, update DuckDNS and any database IP allowlist.
-- Keep backups of production data outside the EC2 instance.
-- The Nginx proxy forwards client IP headers. The Express app is configured to
-  trust only a loopback proxy, so do not change the API proxy target to a
-  public/untrusted proxy without revisiting that setting.
+The application health endpoint is `<PublicURL>/api/health`; a healthy
+response includes `"database":"connected"`.

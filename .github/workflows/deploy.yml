@@ -3,12 +3,8 @@ name: Build and deploy Pockii
 on:
   push:
     branches:
+      - main
       - master
-    paths:
-      - "client/**"
-      - "server/**"
-      - "infra/**"
-      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 permissions:
@@ -19,12 +15,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    env:
-      AWS_REGION: ${{ vars.AWS_REGION }}
-      EC2_HOST: ${{ vars.EC2_HOST }}
-      EC2_SECURITY_GROUP_ID: ${{ vars.EC2_SECURITY_GROUP_ID }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -34,7 +26,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: client/package-lock.json
+          cache-dependency-path: |
+            client/package-lock.json
+            server/package-lock.json
 
       - name: Test and build client
         run: |
@@ -47,6 +41,36 @@ jobs:
           npm --prefix server ci
           npm --prefix server run check
 
+      - name: Upload client build
+        uses: actions/upload-artifact@v4
+        with:
+          name: pockii-client-dist
+          path: client/dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      CFN_STACK_NAME: ${{ vars.CFN_STACK_NAME }}
+      REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+      DEPLOY_BRANCH: ${{ github.ref_name }}
+      DEPLOY_SHA: ${{ github.sha }}
+    steps:
+      - name: Check out deployment template
+        uses: actions/checkout@v4
+
+      - name: Download client build
+        uses: actions/download-artifact@v4
+        with:
+          name: pockii-client-dist
+          path: client/dist
+
+      - name: Package client build
+        run: tar -czf "$RUNNER_TEMP/pockii-client-dist.tar.gz" -C client/dist .
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -55,69 +79,180 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Deploy to EC2
-        env:
-          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+      - name: Deploy CloudFormation stack
         run: |
           set -euo pipefail
           : "${AWS_REGION:?Set the AWS_REGION repository variable}"
-          : "${EC2_HOST:?Set the EC2_HOST repository variable}"
-          : "${EC2_SECURITY_GROUP_ID:?Set the EC2_SECURITY_GROUP_ID repository variable}"
-          : "${EC2_SSH_PRIVATE_KEY:?Set the EC2_SSH_PRIVATE_KEY repository secret}"
-          : "${EC2_KNOWN_HOSTS:?Set the EC2_KNOWN_HOSTS repository secret}"
+          : "${CFN_STACK_NAME:?Set the CFN_STACK_NAME repository variable}"
+          : "${AWS_SESSION_TOKEN:?Set the AWS_SESSION_TOKEN repository secret}"
 
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$EC2_SSH_PRIVATE_KEY" > "$HOME/.ssh/pockii.pem"
-          printf '%s\n' "$EC2_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/pockii.pem" "$HOME/.ssh/known_hosts"
+          STACK_EXISTS=false
+          AMI_ID=""
+          if aws cloudformation describe-stacks --stack-name "$CFN_STACK_NAME" >/dev/null 2>&1; then
+            STACK_EXISTS=true
+            AMI_ID="$(aws cloudformation describe-stacks \
+              --stack-name "$CFN_STACK_NAME" \
+              --query "Stacks[0].Parameters[?ParameterKey=='UbuntuAmi'].ParameterValue | [0]" \
+              --output text)"
+            if [ "$AMI_ID" = "None" ]; then
+              AMI_ID=""
+            fi
+            INSTANCE_ID="$(aws cloudformation describe-stacks \
+              --stack-name "$CFN_STACK_NAME" \
+              --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue | [0]" \
+              --output text)"
+            INSTANCE_STATE="$(aws ec2 describe-instances \
+              --instance-ids "$INSTANCE_ID" \
+              --query 'Reservations[0].Instances[0].State.Name' \
+              --output text)"
+            if [ "$INSTANCE_STATE" = "stopped" ]; then
+              aws ec2 start-instances --instance-ids "$INSTANCE_ID" >/dev/null
+            fi
+            aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
+            aws ec2 wait instance-status-ok --instance-ids "$INSTANCE_ID"
+          fi
+          if [ -z "$AMI_ID" ]; then
+            AMI_ID="$(aws ssm get-parameter \
+              --name /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id \
+              --query Parameter.Value \
+              --output text)"
+          fi
 
-          RUNNER_CIDR="$(curl -4fsS https://checkip.amazonaws.com | tr -d '\r\n')/32"
-          aws ec2 authorize-security-group-ingress \
-            --group-id "$EC2_SECURITY_GROUP_ID" \
-            --protocol tcp \
-            --port 22 \
-            --cidr "$RUNNER_CIDR"
+          aws cloudformation deploy \
+            --template-file infra/ec2-instance.yaml \
+            --stack-name "$CFN_STACK_NAME" \
+            --parameter-overrides \
+              RepositoryUrl="$REPOSITORY_URL" \
+              GitBranch="$DEPLOY_BRANCH" \
+              UbuntuAmi="$AMI_ID" \
+            --no-fail-on-empty-changeset
 
-          cleanup() {
-            rm -f "$HOME/.ssh/pockii.pem" "$RUNNER_TEMP/pockii-client.tar.gz"
-            if ! aws ec2 revoke-security-group-ingress \
-              --group-id "$EC2_SECURITY_GROUP_ID" \
-              --protocol tcp \
-              --port 22 \
-              --cidr "$RUNNER_CIDR"; then
-              echo "::error::Could not remove the temporary SSH rule for $RUNNER_CIDR"
+          stack_output() {
+            aws cloudformation describe-stacks \
+              --stack-name "$CFN_STACK_NAME" \
+              --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue | [0]" \
+              --output text
+          }
+
+          if [ "$STACK_EXISTS" = false ]; then
+            INSTANCE_ID="$(stack_output InstanceId)"
+            aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
+            aws ec2 wait instance-status-ok --instance-ids "$INSTANCE_ID"
+          fi
+          ORIGIN_DOMAIN="$(aws ec2 describe-instances \
+            --instance-ids "$(stack_output InstanceId)" \
+            --query 'Reservations[0].Instances[0].PublicDnsName' \
+            --output text)"
+          if [ -z "$ORIGIN_DOMAIN" ] || [ "$ORIGIN_DOMAIN" = "None" ]; then
+            echo "::error::EC2 has no public DNS name; check that it is in a public subnet"
+            exit 1
+          fi
+          aws cloudformation deploy \
+            --template-file infra/ec2-instance.yaml \
+            --stack-name "$CFN_STACK_NAME" \
+            --parameter-overrides \
+              RepositoryUrl="$REPOSITORY_URL" \
+              GitBranch="$DEPLOY_BRANCH" \
+              UbuntuAmi="$AMI_ID" \
+              OriginDomainName="$ORIGIN_DOMAIN" \
+            --no-fail-on-empty-changeset
+
+          PUBLIC_IP="$(stack_output PublicIP)"
+          PUBLIC_URL="$(stack_output PublicURL)"
+          INSTANCE_ID="$(stack_output InstanceId)"
+          SSM_KEY_PATH="$(stack_output SSMKeyPath)"
+          for value in "$PUBLIC_IP" "$PUBLIC_URL" "$INSTANCE_ID" "$SSM_KEY_PATH"; do
+            if [ -z "$value" ] || [ "$value" = "None" ]; then
+              echo "::error::CloudFormation did not return all required deployment outputs"
               exit 1
             fi
-          }
-          trap cleanup EXIT
+          done
 
-          tar -czf "$RUNNER_TEMP/pockii-client.tar.gz" -C client/dist .
-          scp -i "$HOME/.ssh/pockii.pem" \
+          {
+            printf 'PUBLIC_IP=%s\n' "$PUBLIC_IP"
+            printf 'PUBLIC_URL=%s\n' "$PUBLIC_URL"
+            printf 'INSTANCE_ID=%s\n' "$INSTANCE_ID"
+            printf 'SSM_KEY_PATH=%s\n' "$SSM_KEY_PATH"
+          } >> "$GITHUB_ENV"
+
+      - name: Wait for EC2 instance
+        run: aws ec2 wait instance-status-ok --instance-ids "$INSTANCE_ID"
+
+      - name: Retrieve EC2 private key from SSM
+        run: |
+          set -euo pipefail
+          aws ssm get-parameter \
+            --name "$SSM_KEY_PATH" \
+            --with-decryption \
+            --query Parameter.Value \
+            --output text > "$RUNNER_TEMP/pockii.pem"
+          chmod 600 "$RUNNER_TEMP/pockii.pem"
+          test -s "$RUNNER_TEMP/pockii.pem"
+
+      - name: Wait for cloud-init
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        with:
+          host: ${{ env.PUBLIC_IP }}
+          username: ubuntu
+          key_path: ${{ runner.temp }}/pockii.pem
+          timeout: 2m
+          command_timeout: 20m
+          script: sudo cloud-init status --wait
+
+      - name: Copy client build to EC2
+        run: |
+          scp \
+            -i "$RUNNER_TEMP/pockii.pem" \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$RUNNER_TEMP/pockii-client.tar.gz" \
-            "ubuntu@$EC2_HOST:/tmp/pockii-client.tar.gz"
+            -o StrictHostKeyChecking=accept-new \
+            "$RUNNER_TEMP/pockii-client-dist.tar.gz" \
+            "ubuntu@$PUBLIC_IP:/tmp/pockii-client-dist.tar.gz"
 
-          ssh -i "$HOME/.ssh/pockii.pem" \
-            -o BatchMode=yes \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "ubuntu@$EC2_HOST" \
-            "set -eu
+      - name: Deploy application
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          ACCESS_TOKEN_SECRET: ${{ secrets.ACCESS_TOKEN_SECRET }}
+          CSRF_SECRET: ${{ secrets.CSRF_SECRET }}
+          CLIENT_ORIGINS: ${{ env.PUBLIC_URL }}
+          DEPLOY_BRANCH: ${{ env.DEPLOY_BRANCH }}
+          DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
+        with:
+          host: ${{ env.PUBLIC_IP }}
+          username: ubuntu
+          key_path: ${{ runner.temp }}/pockii.pem
+          timeout: 2m
+          command_timeout: 20m
+          envs: MONGODB_URI,ACCESS_TOKEN_SECRET,CSRF_SECRET,CLIENT_ORIGINS,DEPLOY_BRANCH,DEPLOY_SHA
+          script: |
+            set -eu
             cd /var/www/pockii
-            git pull --ff-only origin master
-            cd server
-            npm ci --omit=dev
-            mkdir -p /var/www/pockii/client/dist
-            tar -xzf /tmp/pockii-client.tar.gz -C /var/www/pockii/client/dist
-            rm -f /tmp/pockii-client.tar.gz
-            chmod -R a+rX /var/www/pockii/client/dist
-            pm2 startOrReload ecosystem.config.cjs --env production --update-env"
+            git fetch origin "$DEPLOY_BRANCH"
+            git checkout --detach "$DEPLOY_SHA"
 
-          HEALTH="$(curl --fail --silent --show-error --retry 5 --retry-delay 3 https://pockii.duckdns.org/api/health)"
+            umask 077
+            printf '%s\n' \
+              'NODE_ENV=production' \
+              'PORT=5000' \
+              "MONGODB_URI=$MONGODB_URI" \
+              "ACCESS_TOKEN_SECRET=$ACCESS_TOKEN_SECRET" \
+              "CSRF_SECRET=$CSRF_SECRET" \
+              "CLIENT_ORIGINS=$CLIENT_ORIGINS" \
+              'REFRESH_COOKIE_SAME_SITE=lax' > server/.env
+
+            npm --prefix server ci --omit=dev
+            mkdir -p client/dist
+            tar -xzf /tmp/pockii-client-dist.tar.gz -C client/dist
+            rm -f /tmp/pockii-client-dist.tar.gz
+            chmod -R a+rX client/dist
+            cd server
+            pm2 startOrReload ecosystem.config.cjs --env production --update-env
+            pm2 save
+
+      - name: Verify deployment health
+        run: |
+          set -euo pipefail
+          HEALTH="$(curl --fail --silent --show-error --retry 10 --retry-delay 5 "$PUBLIC_URL/api/health")"
           echo "$HEALTH"
           echo "$HEALTH" | grep -q '"database":"connected"'

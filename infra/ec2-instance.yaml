@@ -1,0 +1,177 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Pockii EC2 host with CloudFront HTTPS and SSM-managed SSH key
+
+Parameters:
+  RepositoryUrl:
+    Type: String
+    Default: https://github.com/shresthaluns-prog/Expense-Tracker.git
+    AllowedPattern: ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$
+    Description: HTTPS clone URL for this application repository
+  GitBranch:
+    Type: String
+    Default: master
+    AllowedPattern: ^[A-Za-z0-9._/-]+$
+    Description: Branch to clone during instance initialization
+  UbuntuAmi:
+    Type: AWS::EC2::Image::Id
+    Description: Canonical Ubuntu Server 24.04 LTS x86-64 AMI selected at initial deployment
+  OriginDomainName:
+    Type: String
+    Default: ""
+    Description: Current EC2 public DNS name; leave empty when creating the stack
+
+Conditions:
+  HasOriginDomainName: !Not
+    - !Equals
+      - !Ref OriginDomainName
+      - ""
+
+Resources:
+  PockiiKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Sub ${AWS::StackName}-pockii
+      KeyType: rsa
+      KeyFormat: pem
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-pockii
+
+  PockiiSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public HTTP and SSH access for Pockii
+      SecurityGroupIngress:
+        - Description: HTTP from CloudFront and browsers
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - Description: SSH for automated deployment
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+  PockiiInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref UbuntuAmi
+      InstanceType: t2.micro
+      KeyName: !Ref PockiiKeyPair
+      SecurityGroupIds:
+        - !Ref PockiiSecurityGroup
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp3
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-pockii
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            set -Eeuo pipefail
+            export DEBIAN_FRONTEND=noninteractive
+
+            apt-get update
+            apt-get install -y ca-certificates curl git nginx
+            curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+            apt-get install -y nodejs
+            npm install --global pm2
+
+            mkdir -p /var/www/pockii
+            git clone --branch '${GitBranch}' --single-branch '${RepositoryUrl}' /var/www/pockii
+            mkdir -p /var/www/pockii/client/dist
+            chown -R ubuntu:ubuntu /var/www/pockii
+
+            cp /var/www/pockii/infra/nginx-pockii.conf /etc/nginx/sites-available/pockii
+            ln -sfn /etc/nginx/sites-available/pockii /etc/nginx/sites-enabled/pockii
+            rm -f /etc/nginx/sites-enabled/default
+            nginx -t
+            systemctl enable --now nginx
+
+            env PATH="$PATH:/usr/bin" pm2 startup systemd -u ubuntu --hp /home/ubuntu
+
+  PockiiElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref PockiiInstance
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-pockii
+
+  PockiiCloudFront:
+    Type: AWS::CloudFront::Distribution
+    DependsOn: PockiiElasticIp
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub HTTPS distribution for ${AWS::StackName}
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: PockiiEc2Origin
+            DomainName: !If
+              - HasOriginDomainName
+              - !Ref OriginDomainName
+              - !GetAtt PockiiInstance.PublicDnsName
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+        DefaultCacheBehavior:
+          TargetOriginId: PockiiEc2Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+          Compress: true
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: PockiiEc2Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - POST
+              - PATCH
+              - DELETE
+            CachedMethods:
+              - GET
+              - HEAD
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+            Compress: true
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+Outputs:
+  PublicIP:
+    Description: Stable Elastic IP address of the EC2 instance
+    Value: !Ref PockiiElasticIp
+  PublicURL:
+    Description: HTTPS URL for the application
+    Value: !Sub https://${PockiiCloudFront.DomainName}
+  InstanceId:
+    Description: EC2 instance ID for deployment wait operations
+    Value: !Ref PockiiInstance
+  SSMKeyPath:
+    Description: Parameter Store path containing the generated EC2 private key
+    Value: !Sub
+      - /ec2/keypair/${KeyPairId}
+      - KeyPairId: !GetAtt PockiiKeyPair.KeyPairId

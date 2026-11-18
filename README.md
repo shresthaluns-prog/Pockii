@@ -4,7 +4,7 @@ A multi-user expense tracker with a React/Vite client and an Express/Mongoose AP
 
 ## Requirements
 
-- Node.js 20.19+ or 22.12+
+- Node.js 22.12+
 - npm
 - MongoDB for local development
 
@@ -183,4 +183,4 @@ The dashboard displays alerts for overall and category budgets that are currentl
 
 The latest validation passed all 33 client tests, backend syntax checks, and the Vite production build. The backend run passed 35 of 36 tests, including the savings API and model tests; `transactions.integration.test.js` timed out connecting to the temporary MongoDB after the reports integration test. The automated suite exercises the application against an ephemeral MongoDB database and tests the UI in jsdom. Production `Secure` cookie behavior is verified through the production cookie configuration in a separate Node process; deployment behind a real TLS proxy, browser-based cross-tab refresh races, and end-to-end accessibility/visual behavior are not exercised by these automated tests.
 
-The Express rate limiter uses its default in-memory store; deployments with multiple API instances should configure a shared store so the per-IP limit applies across instances. No production deployment manifest or CI workflow is included.
+The Express rate limiter uses its default in-memory store; deployments with multiple API instances should configure a shared store so the per-IP limit applies across instances. AWS deployment uses CloudFormation and a multi-job GitHub Actions workflow; see [docs/hosting-aws-ec2.md](docs/hosting-aws-ec2.md) for setup and required GitHub secrets.
