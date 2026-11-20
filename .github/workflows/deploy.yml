@@ -88,29 +88,55 @@ jobs:
 
           STACK_EXISTS=false
           AMI_ID=""
-          if aws cloudformation describe-stacks --stack-name "$CFN_STACK_NAME" >/dev/null 2>&1; then
-            STACK_EXISTS=true
-            AMI_ID="$(aws cloudformation describe-stacks \
-              --stack-name "$CFN_STACK_NAME" \
-              --query "Stacks[0].Parameters[?ParameterKey=='UbuntuAmi'].ParameterValue | [0]" \
-              --output text)"
-            if [ "$AMI_ID" = "None" ]; then
-              AMI_ID=""
+          STACK_STATUS_ERROR="$RUNNER_TEMP/cloudformation-stack-status-error"
+          if STACK_STATUS="$(aws cloudformation describe-stacks \
+            --stack-name "$CFN_STACK_NAME" \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>"$STACK_STATUS_ERROR")"; then
+            if [ "$STACK_STATUS" = "DELETE_COMPLETE" ]; then
+              echo "CloudFormation stack deletion is complete; creating a fresh stack."
+            elif [ "$STACK_STATUS" = "DELETE_IN_PROGRESS" ]; then
+              echo "::error::CloudFormation stack deletion is still in progress. Wait for DELETE_COMPLETE, then rerun."
+              exit 1
+            elif [ "$STACK_STATUS" = "DELETE_FAILED" ]; then
+              echo "::error::CloudFormation stack deletion failed. Check the stack Events before rerunning."
+              exit 1
+            else
+              STACK_EXISTS=true
+              AMI_ID="$(aws cloudformation describe-stacks \
+                --stack-name "$CFN_STACK_NAME" \
+                --query "Stacks[0].Parameters[?ParameterKey=='UbuntuAmi'].ParameterValue | [0]" \
+                --output text)"
+              if [ "$AMI_ID" = "None" ]; then
+                AMI_ID=""
+              fi
+              INSTANCE_ID="$(aws cloudformation describe-stacks \
+                --stack-name "$CFN_STACK_NAME" \
+                --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue | [0]" \
+                --output text)"
+              INSTANCE_STATE="$(aws ec2 describe-instances \
+                --instance-ids "$INSTANCE_ID" \
+                --query 'Reservations[0].Instances[0].State.Name' \
+                --output text)"
+              case "$INSTANCE_STATE" in
+                stopped)
+                  aws ec2 start-instances --instance-ids "$INSTANCE_ID" >/dev/null
+                  ;;
+                terminated|shutting-down)
+                  echo "::error::The stack references a terminated EC2 instance. Delete the CloudFormation stack and wait for DELETE_COMPLETE before rerunning."
+                  exit 1
+                  ;;
+              esac
+              aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
+              aws ec2 wait instance-status-ok --instance-ids "$INSTANCE_ID"
             fi
-            INSTANCE_ID="$(aws cloudformation describe-stacks \
-              --stack-name "$CFN_STACK_NAME" \
-              --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue | [0]" \
-              --output text)"
-            INSTANCE_STATE="$(aws ec2 describe-instances \
-              --instance-ids "$INSTANCE_ID" \
-              --query 'Reservations[0].Instances[0].State.Name' \
-              --output text)"
-            if [ "$INSTANCE_STATE" = "stopped" ]; then
-              aws ec2 start-instances --instance-ids "$INSTANCE_ID" >/dev/null
-            fi
-            aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
-            aws ec2 wait instance-status-ok --instance-ids "$INSTANCE_ID"
+          elif grep -Fq "does not exist" "$STACK_STATUS_ERROR"; then
+            echo "CloudFormation stack does not exist; creating a fresh stack."
+          else
+            cat "$STACK_STATUS_ERROR" >&2
+            exit 1
           fi
+          rm -f "$STACK_STATUS_ERROR"
           if [ -z "$AMI_ID" ]; then
             AMI_ID="$(aws ssm get-parameter \
               --name /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id \
